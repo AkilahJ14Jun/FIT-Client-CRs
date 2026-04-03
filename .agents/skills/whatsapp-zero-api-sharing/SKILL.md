@@ -1,3 +1,8 @@
+---
+name: whatsapp-zero-api-sharing
+description: Automate PDF sharing via WhatsApp Web without official APIs using PowerShell and Win32
+---
+
 # WhatsApp Zero-API Sharing Skill
 
 Automated PDF sharing via WhatsApp Web without official APIs using PowerShell, custom protocols, and Win32 window automation.
@@ -50,7 +55,7 @@ To use this sharing feature, you must register the protocol handler and apply br
 
 ## ⚙️ Configuration & Maintenance
 
-- **Log Location**: `g:\bobby\GitHub\FIT OpBal Fix - Copy\scripts\automation_debug.log`
+- **Log Location**: `g:\bobby\GitHub\FIT Client CRs\scripts\automation_debug.log`
 - **File Directory**: `~\Downloads\FIT Reports`
 - **Browser Policies**: These are set in `HKLM:\SOFTWARE\Policies\Microsoft\Edge` and `...Google\Chrome`.
 
