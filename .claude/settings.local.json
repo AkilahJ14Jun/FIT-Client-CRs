@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd \"G:/bobby/GitHub/FIT OpBal Fix - DC\" && npx tsc --noEmit 2>&1 | head -30)",
+      "Bash(cd \"G:/bobby/GitHub/FIT OpBal Fix - DC/server\" && npm run start 2>&1)",
+      "Bash(cd \"G:/bobby/GitHub/FIT OpBal Fix - DC\" && npm run dev 2>&1)",
+      "Bash(cd \"G:\\\\bobby\\\\GitHub\\\\FIT OpBal Fix - DC\" && npx tsc --noEmit 2>&1 | head -50)",
+      "Bash(cd \"G:\\\\bobby\\\\GitHub\\\\FIT OpBal Fix - DC\" && npx tsc --noEmit 2>&1 | head -30)",
+      "Bash(cd \"G:\\\\bobby\\\\GitHub\\\\FIT OpBal Fix - DC\" && npx tsc --noEmit 2>&1 | head -80)",
+      "Bash(taskkill //PID 3184 //F 2>&1; sleep 2; netstat -ano | grep \":3001\" | head -3)",
+      "Bash(netstat -ano | findstr \":3001 :5173\" | findstr LISTENING)",
+      "Bash(taskkill //F //PID 8768 //PID 1936 2>&1)"
+    ]
+  }
+}
