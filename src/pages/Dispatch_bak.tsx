@@ -1,4 +1,4 @@
-// FIT – Box Dispatch / Return / Stock Position Entry Form
+// FIT – Box Dispatch / Return / Opening Balance Entry Form
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -16,7 +16,7 @@ import { downloadReceiptAsPDF }   from '../utils/customerReceipt';
 
 // ── Entry Types ───────────────────────────────────────────────────────────────
 const ENTRY_TYPES = [
-  { value: 'opening_balance', label: 'Stock Position' },
+  { value: 'opening_balance', label: 'Opening Balance' },
   { value: 'dispatch',        label: 'Dispatch'        },
   { value: 'return',          label: 'Return'          },
 ];
@@ -38,14 +38,14 @@ interface DispatchFormState {
   externalBoxCount: string;
 }
 
-// ── Stock Position Source Row ────────────────────────────────────────────────
+// ── Opening Balance Source Row ────────────────────────────────────────────────
 interface OBSourceRow {
   id:       string;   // local key only
   sourceId: string;
   quantity: string;
 }
 
-// ── Stock Position Form State ────────────────────────────────────────────────
+// ── Opening Balance Form State ────────────────────────────────────────────────
 interface OBFormState {
   billNumber:          string;
   entryDate:           string;
@@ -100,7 +100,7 @@ export const Dispatch: React.FC = () => {
   });
   const [formErrors, setFormErrors] = useState<Partial<Record<keyof DispatchFormState, string>>>({});
 
-  // ── Stock Position form ──────────────────────────────────────────────────
+  // ── Opening Balance form ──────────────────────────────────────────────────
   const [ob, setOb] = useState<OBFormState>({
     billNumber:         'BILL-001',
     entryDate:          TODAY,
@@ -171,7 +171,7 @@ export const Dispatch: React.FC = () => {
     return Math.max(0, total + current + extBoxes - returned);
   }, [cumulativeSent, form.currentQuantity, form.boxesReturned, form.isExternalSource, form.externalBoxCount]);
 
-  // ── Stock Position computed totals ───────────────────────────────────────
+  // ── Opening Balance computed totals ───────────────────────────────────────
   const obCompanyQty = parseInt(ob.companyOwnQuantity) || 0;
   const obSourceRows = ob.sourceRows;
   const obSourceTotal = obSourceRows.reduce((s, r) => s + (parseInt(r.quantity) || 0), 0);
@@ -215,7 +215,7 @@ export const Dispatch: React.FC = () => {
     return Object.keys(e).length === 0;
   };
 
-  // ── Validate Stock Position ──────────────────────────────────────────────
+  // ── Validate Opening Balance ──────────────────────────────────────────────
   const validateOB = (): boolean => {
     const e: Record<string, string> = {};
     if (!ob.billNumber.trim()) e.billNumber = 'Bill number is required';
@@ -261,7 +261,7 @@ export const Dispatch: React.FC = () => {
         ? await EntryDB.update(editId, payload) as BoxEntry
         : await EntryDB.create(payload);
 
-      console.info('[FIT] Stock Position saved:', saved?.id);
+      console.info('[FIT] Opening Balance saved:', saved?.id);
       navigate('/entries');
     } finally {
       setSaving(false);
@@ -612,7 +612,7 @@ export const Dispatch: React.FC = () => {
               )}
             </Card>
 
-            {/* ── Stock Position Save Button ──────────────────────────── */}
+            {/* ── Opening Balance Save Button ──────────────────────────── */}
             <div className="flex justify-end gap-3 pb-6">
               <Button variant="secondary" onClick={() => navigate(-1)}>{t('dispatch.cancel')}</Button>
               <Button
@@ -699,7 +699,7 @@ export const Dispatch: React.FC = () => {
                 </span>
               </div>
 
-              <div className={`grid grid-cols-2 gap-4 ${isReturn ? 'sm:grid-cols-3' : 'sm:grid-cols-4'}`}>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <div className="flex flex-col gap-1">
                   <label className="text-sm font-medium text-gray-700">{t('dispatch.totalAlreadySent')}</label>
                   <div className="flex items-center justify-center h-[38px] px-3 rounded-lg border-2 font-extrabold text-lg border-blue-300 bg-blue-50 text-blue-800">
@@ -710,18 +710,16 @@ export const Dispatch: React.FC = () => {
                   </p>
                   <input type="hidden" value={cumulativeSent} />
                 </div>
-                {!isReturn && (
-                  <Input
-                    label={t('dispatch.currentQtySent')}
-                    type="number"
-                    min="1"
-                    value={form.currentQuantity}
-                    onChange={(e) => setF('currentQuantity', e.target.value)}
-                    error={formErrors.currentQuantity}
-                    placeholder="0"
-                    hint={t('dispatch.currentQtySentHint')}
-                  />
-                )}
+                <Input
+                  label={isReturn ? t('dispatch.currentQtyReturn') : t('dispatch.currentQtySent')}
+                  type="number"
+                  min={isReturn ? '0' : '1'}
+                  value={form.currentQuantity}
+                  onChange={(e) => setF('currentQuantity', e.target.value)}
+                  error={formErrors.currentQuantity}
+                  placeholder="0"
+                  hint={isReturn ? t('dispatch.returnHint') : t('dispatch.currentQtySentHint')}
+                />
                 <Input
                   label={isReturn ? t('dispatch.boxesReturnedReq') : t('dispatch.boxesReturned')}
                   type="number"
@@ -781,44 +779,42 @@ export const Dispatch: React.FC = () => {
             </Card>
 
             {/* ── External Source ───────────────────────────────────────── */}
-            {!isReturn && (
-              <Card title={t('dispatch.externalSource')} subtitle={t('dispatch.externalSub')}>
-                <div className="space-y-4">
-                  <label className="flex items-center gap-3 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={form.isExternalSource}
-                      onChange={(e) => setF('isExternalSource', e.target.checked)}
-                      className="w-4 h-4 accent-blue-700"
+            <Card title={t('dispatch.externalSource')} subtitle={t('dispatch.externalSub')}>
+              <div className="space-y-4">
+                <label className="flex items-center gap-3 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={form.isExternalSource}
+                    onChange={(e) => setF('isExternalSource', e.target.checked)}
+                    className="w-4 h-4 accent-blue-700"
+                  />
+                  <span className="text-sm font-medium text-gray-700 flex items-center gap-1.5">
+                    <ExternalLink size={14} />
+                    {t('dispatch.externalCheckbox')}
+                  </span>
+                </label>
+                {form.isExternalSource && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                    <Select
+                      label={t('dispatch.invSource')}
+                      value={form.sourceId}
+                      onChange={(e) => setF('sourceId', e.target.value)}
+                      options={sourceOpts}
+                      placeholder="— Select Source —"
+                      error={formErrors.sourceId}
                     />
-                    <span className="text-sm font-medium text-gray-700 flex items-center gap-1.5">
-                      <ExternalLink size={14} />
-                      {t('dispatch.externalCheckbox')}
-                    </span>
-                  </label>
-                  {form.isExternalSource && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                      <Select
-                        label={t('dispatch.invSource')}
-                        value={form.sourceId}
-                        onChange={(e) => setF('sourceId', e.target.value)}
-                        options={sourceOpts}
-                        placeholder="— Select Source —"
-                        error={formErrors.sourceId}
-                      />
-                      <Input
-                        label={t('dispatch.extBoxCount')}
-                        type="number"
-                        min="0"
-                        value={form.externalBoxCount}
-                        onChange={(e) => setF('externalBoxCount', e.target.value)}
-                        placeholder={t('dispatch.extBoxHint')}
-                      />
-                    </div>
-                  )}
-                </div>
-              </Card>
-            )}
+                    <Input
+                      label={t('dispatch.extBoxCount')}
+                      type="number"
+                      min="0"
+                      value={form.externalBoxCount}
+                      onChange={(e) => setF('externalBoxCount', e.target.value)}
+                      placeholder={t('dispatch.extBoxHint')}
+                    />
+                  </div>
+                )}
+              </div>
+            </Card>
 
             {/* ── Info notice ───────────────────────────────────────────── */}
             <div className="flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-800">
