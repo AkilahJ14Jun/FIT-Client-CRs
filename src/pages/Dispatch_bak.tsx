@@ -199,7 +199,6 @@ export const Dispatch: React.FC = () => {
   // ── Validate Dispatch / Return ────────────────────────────────────────────
   const validateDispatch = (): boolean => {
     const e: Partial<Record<keyof DispatchFormState, string>> = {};
-    if (!form.billNumber.trim()) e.billNumber  = 'Bill number is required';
     if (!form.entryDate)         e.entryDate   = 'Date is required';
     if (!form.customerId)        e.customerId  = 'Customer is required';
     if (isReturn) {
@@ -218,7 +217,6 @@ export const Dispatch: React.FC = () => {
   // ── Validate Opening Balance ──────────────────────────────────────────────
   const validateOB = (): boolean => {
     const e: Record<string, string> = {};
-    if (!ob.billNumber.trim()) e.billNumber = 'Bill number is required';
     if (!ob.entryDate)         e.entryDate  = 'Date is required';
     if (obGrandTotal <= 0)
       e.companyOwnQuantity = 'Total stock must be greater than 0';
@@ -391,9 +389,10 @@ export const Dispatch: React.FC = () => {
                 <Input
                   label={t('dispatch.billNumber')}
                   value={ob.billNumber}
-                  onChange={(e) => setObField('billNumber', e.target.value)}
-                  error={obErrors.billNumber}
-                  placeholder="e.g. OB-001"
+                  onChange={() => {}}
+                  readOnly
+                  className="bg-gray-50 cursor-not-allowed"
+                  hint={t('dispatch.billAutoHint')}
                 />
                 <Input
                   label={t('dispatch.date')}
@@ -595,7 +594,7 @@ export const Dispatch: React.FC = () => {
                     {/* Grand total */}
                     <tr className="bg-emerald-600 text-white">
                       <td colSpan={2} className="px-4 py-3 font-extrabold text-sm uppercase tracking-wider">
-                        🏁 Grand Total Opening Stock
+                        🏁 Overall Stock Position
                       </td>
                       <td className="px-4 py-3 text-right font-extrabold text-xl">
                         {obGrandTotal}
@@ -639,9 +638,10 @@ export const Dispatch: React.FC = () => {
                 <Input
                   label={t('dispatch.billNumber')}
                   value={form.billNumber}
-                  onChange={(e) => setF('billNumber', e.target.value)}
-                  error={formErrors.billNumber}
-                  placeholder="e.g. BILL-001"
+                  onChange={() => {}}
+                  readOnly
+                  className="bg-gray-50 cursor-not-allowed"
+                  hint={t('dispatch.billAutoHint')}
                 />
                 <Input
                   label={t('dispatch.date')}

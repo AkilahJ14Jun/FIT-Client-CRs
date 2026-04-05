@@ -449,8 +449,8 @@ function buildReceiptHTML(
       <!-- STATUS BANNER -->
       <div class="status-banner ${allReturned ? 'status-ok' : 'status-pending'}">
         ${allReturned
-          ? '&#10003; All boxes have been returned. Thank you!'
-          : `Total ${balance} box${balance !== 1 ? 'es' : ''} pending return`}
+          ? '✅ All boxes have been returned. Thank you!'
+          : `⚠️ ${balance} box${balance !== 1 ? 'es' : ''} pending return`}
       </div>
 
       <!-- SIGNATURE -->
@@ -812,8 +812,8 @@ export async function downloadReceiptAsPDF(entry: BoxEntry, customer: Customer):
   doc.setFontSize(9);
   doc.setFont('helvetica', 'bold');
   const statusText = allReturned
-    ? 'All boxes have been returned. Thank you!'
-    : `Total ${balance} box${balance !== 1 ? 'es' : ''} pending return`;
+    ? '✓ All boxes have been returned. Thank you!'
+    : `⚠  ${balance} box${balance !== 1 ? 'es' : ''} pending return`;
   doc.text(statusText, PW / 2, y + 6.5, { align: 'center' });
   y += 14;
 

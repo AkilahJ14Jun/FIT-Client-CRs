@@ -12,6 +12,7 @@ import { Entries } from './pages/Entries';
 import { Dispatch } from './pages/Dispatch';
 import { Reports } from './pages/Reports';
 import { Settings } from './pages/Settings';
+import AdminData from './pages/AdminData';
 import { Architecture } from './pages/Architecture';
 import { UserGuide } from './pages/UserGuide';
 import { MobileAccess } from './pages/MobileAccess';
@@ -41,6 +42,7 @@ export default function App() {
               <Route path="/dispatch" element={<Dispatch />} />
               <Route path="/reports" element={<Reports />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/admin-data" element={<AdminData />} />
               <Route path="/architecture" element={<Architecture />} />
               <Route path="/guide" element={<UserGuide />} />
               <Route path="/mobile" element={<MobileAccess />} />

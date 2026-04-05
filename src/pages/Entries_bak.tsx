@@ -50,21 +50,16 @@ export const Entries: React.FC = () => {
   const [waEntry,    setWaEntry]    = useState<BoxEntry | null>(null);
   const [waCustomer, setWaCustomer] = useState<Customer | null>(null);
 
-  const [downloadDoneId,  setDownloadDoneId]  = useState<string | null>(null);
-  const [toast,           setToast]           = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
-  const [liveStockTotal,  setLiveStockTotal]  = useState<number | null>(null);
+  const [downloadDoneId, setDownloadDoneId] = useState<string | null>(null);
+  const [toast,          setToast]          = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [e, c, a, live] = await Promise.all([
-        EntryDB.getAll(), CustomerDB.getAll(), AreaDB.getAll(),
-        EntryDB.getLiveStockPosition(),
-      ]);
+      const [e, c, a] = await Promise.all([EntryDB.getAll(), CustomerDB.getAll(), AreaDB.getAll()]);
       setEntries(e);
       setCustomers(c);
       setAreas(a);
-      setLiveStockTotal(live.entry ? live.liveTotal : null);
     } finally {
       setLoading(false);
     }
@@ -180,7 +175,6 @@ export const Entries: React.FC = () => {
           <select value={filterType} onChange={(e) => setFilterType(e.target.value)}
             className="text-sm rounded-lg border border-gray-300 px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
             <option value="">{t('entries.allTypes')}</option>
-            <option value="opening_balance">{t('dispatch.openingBal')}</option>
             <option value="dispatch">{t('dispatch.dispatch')}</option>
             <option value="return">{t('dispatch.return')}</option>
           </select>
@@ -222,12 +216,14 @@ export const Entries: React.FC = () => {
                   <th className="text-left px-4 py-3 cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort('billNumber')}><span className="flex items-center gap-1">{t('entries.colBill')} <SortIcon field="billNumber" /></span></th>
                   <th className="text-left px-4 py-3">{t('entries.colCustomer')}</th>
                   <th className="text-left px-4 py-3">{t('entries.colType')}</th>
-                  <th className="text-right px-4 py-3 w-[30px]" title="Company's own stock count">{t('entries.colOwnStock')}</th>
-                  <th className="text-right px-4 py-3 w-[30px]" title="Boxes from all other/external sources">{t('entries.colOtherSources')}</th>
-                  <th className="text-right px-4 py-3 w-[30px]">{t('entries.colReturned')}</th>
-                  <th className="text-right px-4 py-3 w-[60px]" title="Own stock + Other sources - Returned">{t('entries.colTotalBoxes')}</th>
+                  <th className="text-right px-4 py-3">{t('entries.colTotal')}</th>
+                  <th className="text-right px-4 py-3" title="Boxes already sent before this entry">{t('entries.colAlreadySent')}</th>
+                  <th className="text-right px-4 py-3" title="Boxes sent in this specific entry">{t('entries.colThisEntry')}</th>
+                  <th className="text-right px-4 py-3">{t('entries.colReturned')}</th>
                   <th className="text-right px-4 py-3">{t('entries.colBalance')}</th>
-                  <th className="text-left px-4 py-3">{t('entries.colActions')}</th>
+                  <th className="text-left px-4 py-3">{t('entries.colDriver')}</th>
+                  <th className="text-left px-4 py-3">{t('entries.colVehicle')}</th>
+                  <th className="text-center px-4 py-3 min-w-[140px]">{t('entries.colActions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -239,43 +235,25 @@ export const Entries: React.FC = () => {
                       <td className="px-4 py-3 font-semibold text-blue-800 whitespace-nowrap">{e.billNumber}</td>
                       <td className="px-4 py-3"><div className="font-medium text-gray-800 whitespace-nowrap">{e.customerName}</div><div className="text-xs text-gray-400">{e.shopName}</div></td>
                       <td className="px-4 py-3">
-                        <Badge variant={ENTRY_TYPE_BADGE[e.entryType] || 'gray'}>
-                          {e.entryType === 'opening_balance' ? 'Stock Position' : e.entryType.replace(/_/g, ' ')}
-                        </Badge>
+                        <Badge variant={ENTRY_TYPE_BADGE[e.entryType] || 'gray'}>{e.entryType.replace(/_/g, ' ')}</Badge>
                         {e.isExternalSource && (<div className="text-xs text-purple-600 mt-0.5">via {e.sourceName}</div>)}
                       </td>
-                      {(() => {
-                        const otherSrc = e.isExternalSource
-                          ? (e.externalBoxCount ?? 0)
-                          : (e.openingStockSources ?? []).reduce((s, src) => s + (src.quantity || 0), 0);
-                        const totalBoxes = e.currentQuantity + otherSrc - e.boxesReturned;
-                        return (
-                          <>
-                            {e.entryType === 'opening_balance' ? (
-                              <td className="px-4 py-3 text-right font-extrabold text-emerald-700 text-base" title="Live stock count">{liveStockTotal ?? e.currentQuantity}</td>
-                            ) : (
-                              <td className="px-4 py-3 text-right font-extrabold text-blue-900 text-base">{e.currentQuantity}</td>
-                            )}
-                            <td className="px-4 py-3 text-right text-indigo-600 font-medium">{otherSrc}</td>
-                            <td className="px-4 py-3 text-right text-emerald-700 font-medium">{e.boxesReturned}</td>
-                            <td className="px-4 py-3 text-right font-bold text-gray-800 text-base">{totalBoxes < 0 ? 0 : totalBoxes}</td>
-                            <td className="px-4 py-3 text-right"><span className={`font-bold ${totalBoxes > 0 ? 'text-blue-800' : 'text-green-600'}`}>{totalBoxes < 0 ? 0 : totalBoxes}</span></td>
-                          </>
-                        );
-                      })()}
+                      <td className="px-4 py-3 text-right"><span className="font-extrabold text-blue-900 text-base">{e.totalBoxesSent + e.currentQuantity}</span></td>
+                      <td className="px-4 py-3 text-right text-gray-500 text-xs">{e.totalBoxesSent}</td>
+                      <td className="px-4 py-3 text-right text-gray-700 font-medium">{e.currentQuantity}</td>
+                      <td className="px-4 py-3 text-right text-emerald-700 font-medium">{e.boxesReturned}</td>
+                      <td className="px-4 py-3 text-right"><span className={`font-bold ${e.balanceBoxes > 0 ? 'text-amber-700' : 'text-green-600'}`}>{e.balanceBoxes}</span></td>
+                      <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">{e.driverName || '—'}</td>
+                      <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">{e.vehicleNumber || '—'}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-center gap-1">
                           <button onClick={() => navigate(`/dispatch?edit=${e.id}`)} title="Edit entry" className="p-1.5 rounded-lg text-gray-400 hover:text-blue-700 hover:bg-blue-50 transition-colors"><Pencil size={14} /></button>
-                          {e.entryType !== 'opening_balance' && (
-                            <>
-                              <button onClick={() => handlePreviewReceipt(e)} title="Preview Customer Receipt" className="p-1.5 rounded-lg text-blue-400 hover:text-blue-800 hover:bg-blue-50 transition-colors"><Receipt size={14} /></button>
-                              <button onClick={() => handleDirectDownload(e)} title="Print Customer Receipt as PDF"
-                                className={`p-1.5 rounded-lg transition-colors ${isDone ? 'text-emerald-600 bg-emerald-50' : 'text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50'}`}>
-                                {isDone ? <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg> : <FileDown size={14} />}
-                              </button>
-                              <button onClick={() => handleWhatsApp(e)} title="Send Receipt via WhatsApp" className="p-1.5 rounded-lg transition-colors text-green-500 hover:text-green-700 hover:bg-green-50"><MessageCircle size={14} /></button>
-                            </>
-                          )}
+                          <button onClick={() => handlePreviewReceipt(e)} title="Preview Customer Receipt" className="p-1.5 rounded-lg text-blue-400 hover:text-blue-800 hover:bg-blue-50 transition-colors"><Receipt size={14} /></button>
+                          <button onClick={() => handleDirectDownload(e)} title="Print Customer Receipt as PDF"
+                            className={`p-1.5 rounded-lg transition-colors ${isDone ? 'text-emerald-600 bg-emerald-50' : 'text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50'}`}>
+                            {isDone ? <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg> : <FileDown size={14} />}
+                          </button>
+                          <button onClick={() => handleWhatsApp(e)} title="Send Receipt via WhatsApp" className="p-1.5 rounded-lg transition-colors text-green-500 hover:text-green-700 hover:bg-green-50"><MessageCircle size={14} /></button>
                           <button onClick={() => setDeleteTarget(e)} title="Delete entry" className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"><Trash2 size={14} /></button>
                         </div>
                       </td>

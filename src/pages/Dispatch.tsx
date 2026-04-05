@@ -1,8 +1,8 @@
-// FIT – Box Dispatch / Return / Stock Position Entry Form
+// FIT – Box Dispatch / Return / Opening Balance Entry Form
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Save, ArrowLeft, User, ExternalLink, Plus, Trash2, Package, Building2, Layers } from 'lucide-react';
+import { Save, ArrowLeft, User, ExternalLink, Building2, Layers, Plus, Trash2 } from 'lucide-react';
 import { useTranslation } from '../i18n/TranslationProvider';
 import {
   CustomerDB, SourceDB, EntryDB,
@@ -34,18 +34,23 @@ interface DispatchFormState {
   driverName:       string;
   vehicleNumber:    string;
   isExternalSource: boolean;
-  sourceId:         string;
-  externalBoxCount: string;
+  externalSourceRows: DispatchSourceRow[];
 }
 
-// ── Stock Position Source Row ────────────────────────────────────────────────
+interface DispatchSourceRow {
+  id:       string;
+  sourceId: string;
+  boxCount: string;
+}
+
+// ── Opening Balance Source Row ────────────────────────────────────────────────
 interface OBSourceRow {
   id:       string;   // local key only
   sourceId: string;
   quantity: string;
 }
 
-// ── Stock Position Form State ────────────────────────────────────────────────
+// ── Opening Balance Form State ────────────────────────────────────────────────
 interface OBFormState {
   billNumber:          string;
   entryDate:           string;
@@ -58,11 +63,12 @@ const TODAY = new Date().toISOString().split('T')[0];
 
 
 
+
+// ─────────────────────────────────────────────────────────────────────────────
 function newSourceRow(): OBSourceRow {
   return { id: crypto.randomUUID(), sourceId: '', quantity: '' };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 export const Dispatch: React.FC = () => {
   const { t } = useTranslation();
   const navigate       = useNavigate();
@@ -95,12 +101,11 @@ export const Dispatch: React.FC = () => {
     driverName:       '',
     vehicleNumber:    '',
     isExternalSource: false,
-    sourceId:         '',
-    externalBoxCount: '',
+    externalSourceRows: [],
   });
   const [formErrors, setFormErrors] = useState<Partial<Record<keyof DispatchFormState, string>>>({});
 
-  // ── Stock Position form ──────────────────────────────────────────────────
+  // ── Opening Balance form ──────────────────────────────────────────────────
   const [ob, setOb] = useState<OBFormState>({
     billNumber:         'BILL-001',
     entryDate:          TODAY,
@@ -111,13 +116,39 @@ export const Dispatch: React.FC = () => {
   const [obErrors, setObErrors] = useState<Partial<Record<string, string>>>({});
 
   // ── Load next bill number async ──────────────────────────────────────────
+  // Fetch fresh bill number whenever entry type changes (or on first load)
   useEffect(() => {
-    if (editId) return; // don't overwrite when editing
-    EntryDB.nextBillNumber().then((bill) => {
-      setForm((f) => ({ ...f, billNumber: bill }));
-      setOb((o) => ({ ...o, billNumber: bill }));
+    if (editId) return;
+    // Dispatch/Return get prefix; Stock Position gets plain 6-digit
+    EntryDB.nextBillNumber(entryType).then((bill) => {
+      if (entryType === 'opening_balance') {
+        setOb((o) => ({ ...o, billNumber: bill }));
+      } else {
+        setForm((f) => ({ ...f, billNumber: bill }));
+      }
     });
-  }, [editId]);
+  }, [editId, entryType]);
+
+  // ── Load live stock position when switching to Stock Position for new entries ──
+  useEffect(() => {
+    if (editId) return;
+    if (entryType !== 'opening_balance') return;
+    EntryDB.getLiveStockPosition().then((live) => {
+      if (!live.entry) return; // No stock position exists yet
+      setOb((o) => {
+        // Only pre-fill if the form is currently empty (user just switched tabs)
+        const hasValues = o.companyOwnQuantity !== '' || o.sourceRows.length > 0;
+        if (hasValues) return o;
+        return {
+          ...o,
+          companyOwnQuantity: String(live.liveCompanyQty),
+          sourceRows: live.liveSources.map((s) => ({
+            id: crypto.randomUUID(), sourceId: s.sourceId, quantity: String(s.quantity),
+          })),
+        };
+      });
+    });
+  }, [editId, entryType]);
 
   // ── Receipt preview ───────────────────────────────────────────────────────
   const [saving,          setSaving]          = useState(false);
@@ -125,22 +156,43 @@ export const Dispatch: React.FC = () => {
   const [receiptEntry,    setReceiptEntry]    = useState<BoxEntry | null>(null);
   const [receiptCustomer, setReceiptCustomer] = useState<Customer | null>(null);
 
+  // ── Live stock position (overall status, independent of form values) ──
+  const [liveStock, setLiveStock] = useState<{
+    liveCompanyQty: number;
+    liveSources: Array<{ sourceId: string; sourceName: string; quantity: number }>;
+    liveTotal: number;
+  } | null>(null);
+
   const isOB     = entryType === 'opening_balance';
   const isReturn = entryType === 'return';
+
+  // ── Fetch overall live stock whenever Stock Position is selected ────
+  useEffect(() => {
+    if (entryType !== 'opening_balance') return;
+    EntryDB.getLiveStockPosition().then((live) => {
+      setLiveStock(live.entry ? {
+        liveCompanyQty: live.liveCompanyQty,
+        liveSources: live.liveSources,
+        liveTotal: live.liveTotal,
+      } : null);
+    });
+  }, [entryType]);
 
   // ── Load existing entry for edit ──────────────────────────────────────────
   useEffect(() => {
     if (!editId) return;
-    EntryDB.getById(editId).then((entry) => {
+    EntryDB.getById(editId).then(async (entry) => {
       if (!entry) return;
       setEntryType(entry.entryType);
       if (entry.entryType === 'opening_balance') {
+        // CR5: Always load LIVE stock counts (original minus all dispatches/returns since)
+        const live = await EntryDB.getLiveStockPosition();
         setOb({
           billNumber:         entry.billNumber,
           entryDate:          entry.entryDate,
           description:        entry.description,
-          companyOwnQuantity: String(entry.companyOwnQuantity ?? entry.currentQuantity),
-          sourceRows: (entry.openingStockSources ?? []).map((s) => ({
+          companyOwnQuantity: String(live.liveCompanyQty),
+          sourceRows: live.liveSources.map((s) => ({
             id: crypto.randomUUID(), sourceId: s.sourceId, quantity: String(s.quantity),
           })),
         });
@@ -151,8 +203,18 @@ export const Dispatch: React.FC = () => {
           entryType: entry.entryType, totalBoxesSent: String(entry.totalBoxesSent),
           currentQuantity: String(entry.currentQuantity), boxesReturned: String(entry.boxesReturned),
           driverName: entry.driverName, vehicleNumber: entry.vehicleNumber,
-          isExternalSource: entry.isExternalSource, sourceId: entry.sourceId || '',
-          externalBoxCount: String(entry.externalBoxCount ?? ''),
+          isExternalSource: entry.isExternalSource,
+          externalSourceRows: (entry.openingStockSources && entry.openingStockSources.length > 0)
+            ? entry.openingStockSources.map((s) => ({
+                id: crypto.randomUUID(),
+                sourceId: s.sourceId,
+                boxCount: String(s.quantity),
+              }))
+            : (entry.isExternalSource && entry.sourceId ? [{
+                id: crypto.randomUUID(),
+                sourceId: entry.sourceId,
+                boxCount: String(entry.externalBoxCount ?? ''),
+              }] : []),
         });
       }
     });
@@ -164,14 +226,21 @@ export const Dispatch: React.FC = () => {
 
   // ── Balance Boxes (Dispatch / Return) ─────────────────────────────────────
   const balanceBoxes = useMemo(() => {
+    if (isReturn) {
+      const total    = cumulativeSent;
+      const returned = parseInt(form.boxesReturned) || 0;
+      return Math.max(0, total - returned);
+    }
     const total     = cumulativeSent;
     const current   = parseInt(form.currentQuantity) || 0;
     const returned  = parseInt(form.boxesReturned)   || 0;
-    const extBoxes  = form.isExternalSource ? (parseInt(form.externalBoxCount) || 0) : 0;
+    const extBoxes  = form.isExternalSource
+      ? form.externalSourceRows.reduce((s, r) => s + (parseInt(r.boxCount) || 0), 0)
+      : 0;
     return Math.max(0, total + current + extBoxes - returned);
-  }, [cumulativeSent, form.currentQuantity, form.boxesReturned, form.isExternalSource, form.externalBoxCount]);
+  }, [cumulativeSent, form.currentQuantity, form.boxesReturned, form.isExternalSource, form.externalSourceRows, isReturn]);
 
-  // ── Stock Position computed totals ───────────────────────────────────────
+  // ── Opening Balance computed totals ───────────────────────────────────────
   const obCompanyQty = parseInt(ob.companyOwnQuantity) || 0;
   const obSourceRows = ob.sourceRows;
   const obSourceTotal = obSourceRows.reduce((s, r) => s + (parseInt(r.quantity) || 0), 0);
@@ -187,19 +256,18 @@ export const Dispatch: React.FC = () => {
   const addSourceRow = () =>
     setOb((p) => ({ ...p, sourceRows: [...p.sourceRows, newSourceRow()] }));
 
-  const removeSourceRow = (id: string) =>
-    setOb((p) => ({ ...p, sourceRows: p.sourceRows.filter((r) => r.id !== id) }));
-
   const updateSourceRow = (id: string, field: 'sourceId' | 'quantity', value: string) =>
     setOb((p) => ({
       ...p,
       sourceRows: p.sourceRows.map((r) => r.id === id ? { ...r, [field]: value } : r),
     }));
 
+  const removeSourceRow = (id: string) =>
+    setOb((p) => ({ ...p, sourceRows: p.sourceRows.filter((r) => r.id !== id) }));
+
   // ── Validate Dispatch / Return ────────────────────────────────────────────
   const validateDispatch = (): boolean => {
     const e: Partial<Record<keyof DispatchFormState, string>> = {};
-    if (!form.billNumber.trim()) e.billNumber  = 'Bill number is required';
     if (!form.entryDate)         e.entryDate   = 'Date is required';
     if (!form.customerId)        e.customerId  = 'Customer is required';
     if (isReturn) {
@@ -210,15 +278,19 @@ export const Dispatch: React.FC = () => {
         e.currentQuantity = 'Quantity sent is required (must be > 0)';
     }
     if (parseInt(form.boxesReturned) < 0) e.boxesReturned = 'Cannot be negative';
-    if (form.isExternalSource && !form.sourceId) e.sourceId = 'Source is required';
+    if (form.isExternalSource) {
+      form.externalSourceRows.forEach((r, i) => {
+        if (!r.sourceId)                       e[`ext_src_${i}_id`]   = 'Select a source';
+        if (!r.boxCount || parseInt(r.boxCount) <= 0) e[`ext_src_${i}_count`] = 'Enter quantity > 0';
+      });
+    }
     setFormErrors(e);
     return Object.keys(e).length === 0;
   };
 
-  // ── Validate Stock Position ──────────────────────────────────────────────
+  // ── Validate Opening Balance ──────────────────────────────────────────────
   const validateOB = (): boolean => {
     const e: Record<string, string> = {};
-    if (!ob.billNumber.trim()) e.billNumber = 'Bill number is required';
     if (!ob.entryDate)         e.entryDate  = 'Date is required';
     if (obGrandTotal <= 0)
       e.companyOwnQuantity = 'Total stock must be greater than 0';
@@ -261,7 +333,7 @@ export const Dispatch: React.FC = () => {
         ? await EntryDB.update(editId, payload) as BoxEntry
         : await EntryDB.create(payload);
 
-      console.info('[FIT] Stock Position saved:', saved?.id);
+      console.info('[FIT] Opening Balance saved:', saved?.id);
       navigate('/entries');
     } finally {
       setSaving(false);
@@ -273,12 +345,17 @@ export const Dispatch: React.FC = () => {
     setSaving(true);
     try {
       const customer = customers.find((c) => c.id === form.customerId);
-      const source   = form.sourceId ? sources.find((s) => s.id === form.sourceId) : undefined;
 
       const numCurrentQty = parseInt(form.currentQuantity) || 0;
       const numReturned   = parseInt(form.boxesReturned)   || 0;
       const numTotalSent  = cumulativeSent;
-      const numExtBoxes   = form.isExternalSource ? (parseInt(form.externalBoxCount) || 0) : 0;
+      const extSourceRows = form.isExternalSource
+        ? form.externalSourceRows.map((r) => {
+            const src = sources.find((s) => s.id === r.sourceId);
+            return { sourceId: r.sourceId, sourceName: src?.sourceName ?? 'Unknown', quantity: parseInt(r.boxCount) || 0 };
+          }).filter((s) => s.quantity > 0)
+        : [];
+      const numExtBoxes   = extSourceRows.reduce((s, r) => s + r.quantity, 0);
       const computedBal   = Math.max(0, numTotalSent + numCurrentQty + numExtBoxes - numReturned);
 
       const payload: Omit<BoxEntry, 'id' | 'createdAt' | 'updatedAt'> = {
@@ -289,14 +366,20 @@ export const Dispatch: React.FC = () => {
         boxesReturned: numReturned, balanceBoxes: computedBal,
         driverName: form.driverName.trim(), vehicleNumber: form.vehicleNumber.trim(),
         isExternalSource: form.isExternalSource,
-        sourceId:         form.isExternalSource ? form.sourceId      : undefined,
-        sourceName:       form.isExternalSource ? source?.sourceName  : undefined,
-        externalBoxCount: form.isExternalSource ? parseInt(form.externalBoxCount) || 0 : undefined,
+        sourceId:         form.isExternalSource && extSourceRows.length === 1 ? extSourceRows[0].sourceId : undefined,
+        sourceName:       form.isExternalSource && extSourceRows.length === 1 ? extSourceRows[0].sourceName : undefined,
+        externalBoxCount: form.isExternalSource && extSourceRows.length === 1 ? extSourceRows[0].quantity : undefined,
+        openingStockSources: form.isExternalSource && extSourceRows.length > 0 ? extSourceRows : undefined,
       };
 
       const savedEntry = editId
         ? await EntryDB.update(editId, payload) as BoxEntry
         : await EntryDB.create(payload);
+
+      // CR6: Update stock position entry to reflect this dispatch/return
+      if (savedEntry) {
+        await EntryDB.updateStockPositionAfterEntry(savedEntry);
+      }
 
       // Persist the updated sent count to the backend
       if (customer && savedEntry && !editId) {
@@ -391,9 +474,10 @@ export const Dispatch: React.FC = () => {
                 <Input
                   label={t('dispatch.billNumber')}
                   value={ob.billNumber}
-                  onChange={(e) => setObField('billNumber', e.target.value)}
-                  error={obErrors.billNumber}
-                  placeholder="e.g. OB-001"
+                  onChange={() => {}}
+                  readOnly
+                  className="bg-gray-50 cursor-not-allowed"
+                  hint={t('dispatch.billAutoHint')}
                 />
                 <Input
                   label={t('dispatch.date')}
@@ -438,76 +522,68 @@ export const Dispatch: React.FC = () => {
               </div>
             </Card>
 
-            {/* Other Sources */}
+            {/* External Sources */}
             <Card
-              title={t('dispatch.otherSources')}
-              subtitle={t('dispatch.otherSourcesSub')}
+              title="External Sources"
+              subtitle="Click Add Source to include a new source and enter box count"
             >
-              {ob.sourceRows.length === 0 && (
-                <div className="text-center py-6 text-gray-400 text-sm border-2 border-dashed border-gray-200 rounded-xl mb-4">
-                  <Package size={28} className="mx-auto mb-2 opacity-40" />
-                  <p>{t('dispatch.noSources')}</p>
-                  <p className="text-xs mt-1">{t('dispatch.noSourcesSub')}</p>
-                </div>
+              {ob.sourceRows.length > 0 && (
+                <>
+                  <div className="flex items-center justify-between py-2 mb-2 px-1 border-b border-gray-200">
+                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Source Name</span>
+                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Box Count</span>
+                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide w-7"></span>
+                  </div>
+                  {ob.sourceRows.map((row) => {
+                    const isNewRow = row.sourceId === '';
+                    const availableSources = sources.filter(
+                      (s) => s.id === row.sourceId || !ob.sourceRows.some((r) => r.sourceId === s.id),
+                    );
+                    const src = sources.find((s) => s.id === row.sourceId);
+                    const displayName = src?.sourceName ?? (isNewRow ? '' : 'Unknown');
+                    return (
+                      <div key={row.id} className="flex items-center gap-3 py-2 border-b border-gray-100 last:border-b-0">
+                        {isNewRow ? (
+                          <select
+                            value={row.sourceId}
+                            onChange={(e) => updateSourceRow(row.id, 'sourceId', e.target.value)}
+                            className="flex-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="">— Select Source —</option>
+                            {availableSources.map((s) => (
+                              <option key={s.id} value={s.id}>{s.sourceName}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="text-sm text-gray-700 font-medium flex-1 truncate">{displayName}</span>
+                        )}
+                        <input
+                          type="number"
+                          min="0"
+                          value={row.quantity}
+                          onChange={(e) => updateSourceRow(row.id, 'quantity', e.target.value)}
+                          className="w-24 rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-right font-bold text-indigo-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeSourceRow(row.id)}
+                          className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg flex-shrink-0"
+                          title="Delete"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </>
               )}
 
-              {ob.sourceRows.map((row, idx) => {
-                const src = sources.find((s) => s.id === row.sourceId);
-                return (
-                  <div
-                    key={row.id}
-                    className="flex items-start gap-3 mb-3 p-3 bg-gray-50 rounded-xl border border-gray-200"
-                  >
-                    <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex-shrink-0 mt-1 text-xs font-bold">
-                      {idx + 1}
-                    </div>
-                    <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <Select
-                          label={t('dispatch.invSource')}
-                          value={row.sourceId}
-                          onChange={(e) => updateSourceRow(row.id, 'sourceId', e.target.value)}
-                          options={sourceOpts}
-                          placeholder="— Select Source —"
-                          error={obErrors[`src_${idx}_source`]}
-                        />
-                        {src && (
-                          <p className="text-xs text-gray-500 mt-1">📞 {src.mobile} · {src.contactPerson}</p>
-                        )}
-                      </div>
-                      <Input
-                        label={t('dispatch.companyQty').replace(' *', '')}
-                        type="number"
-                        min="1"
-                        value={row.quantity}
-                        onChange={(e) => updateSourceRow(row.id, 'quantity', e.target.value)}
-                        placeholder="0"
-                        error={obErrors[`src_${idx}_qty`]}
-                        hint={t('dispatch.extBoxHint')}
-                      />
-                    </div>
-                    <button
-                      onClick={() => removeSourceRow(row.id)}
-                      className="flex-shrink-0 mt-6 p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                      title="Remove this source"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                );
-              })}
-
-              <Button
-                variant="secondary"
-                size="sm"
-                icon={<Plus size={15} />}
-                onClick={addSourceRow}
-              >
-                {t('dispatch.addSource')}
+              <Button variant="secondary" size="sm" icon={<Plus size={15} />} onClick={addSourceRow} className="mt-3">
+                Add Source
               </Button>
             </Card>
 
-            {/* ── Stock Summary Table ────────────────────────────────────── */}
+            {/* ── Overall Stock Status ────────────────────────────────────── */}
             <Card
               title={t('dispatch.stockSummary')}
               subtitle={t('dispatch.stockSummarySub')}
@@ -518,11 +594,11 @@ export const Dispatch: React.FC = () => {
                     <tr className="bg-gray-800 text-white">
                       <th className="text-left px-4 py-3 font-semibold">Source</th>
                       <th className="text-left px-4 py-3 font-semibold">Type</th>
-                      <th className="text-right px-4 py-3 font-semibold">Quantity (Boxes)</th>
+                      <th className="text-right px-4 py-3 font-semibold">Remaining (Boxes)</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {/* Company row */}
+                    {/* Company own stock row */}
                     <tr className="border-b border-gray-100 bg-blue-50">
                       <td className="px-4 py-3 font-semibold text-blue-900 flex items-center gap-2">
                         <Building2 size={14} className="text-blue-600" />
@@ -538,15 +614,16 @@ export const Dispatch: React.FC = () => {
                       </td>
                     </tr>
 
-                    {/* Source rows */}
-                    {ob.sourceRows.map((row, idx) => {
+                    {/* Source rows from form */}
+                    {ob.sourceRows.length > 0 ? ob.sourceRows.map((row) => {
                       const src = sources.find((s) => s.id === row.sourceId);
-                      const qty = parseInt(row.quantity) || 0;
+                      const displayName = src?.sourceName ?? 'Unknown';
+                      const rowQty = parseInt(row.quantity) || 0;
                       return (
                         <tr key={row.id} className="border-b border-gray-100 hover:bg-gray-50">
                           <td className="px-4 py-3 text-gray-700 flex items-center gap-2">
                             <Layers size={14} className="text-indigo-500" />
-                            {src ? src.sourceName : <span className="text-gray-400 italic">Source {idx + 1} (not selected)</span>}
+                            {displayName}
                           </td>
                           <td className="px-4 py-3">
                             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
@@ -554,14 +631,11 @@ export const Dispatch: React.FC = () => {
                             </span>
                           </td>
                           <td className="px-4 py-3 text-right font-semibold text-gray-800">
-                            {qty}
+                            {rowQty}
                           </td>
                         </tr>
                       );
-                    })}
-
-                    {/* No sources placeholder */}
-                    {ob.sourceRows.length === 0 && (
+                    }) : (
                       <tr className="border-b border-gray-100">
                         <td colSpan={3} className="px-4 py-3 text-center text-gray-400 text-xs italic">
                           {t('dispatch.noExtSources')}
@@ -572,30 +646,10 @@ export const Dispatch: React.FC = () => {
 
                   {/* Totals footer */}
                   <tfoot>
-                    {/* Company subtotal */}
-                    <tr className="bg-blue-100 border-t border-blue-200">
-                      <td colSpan={2} className="px-4 py-2 font-semibold text-blue-900 text-xs uppercase tracking-wide">
-                        {t('dispatch.companyTotal')}
-                      </td>
-                      <td className="px-4 py-2 text-right font-bold text-blue-900">
-                        {obCompanyQty}
-                      </td>
-                    </tr>
-                    {/* Source subtotal */}
-                    {ob.sourceRows.length > 0 && (
-                      <tr className="bg-indigo-100 border-t border-indigo-200">
-                        <td colSpan={2} className="px-4 py-2 font-semibold text-indigo-900 text-xs uppercase tracking-wide">
-                          {t('dispatch.extTotal')}
-                        </td>
-                        <td className="px-4 py-2 text-right font-bold text-indigo-900">
-                          {obSourceTotal}
-                        </td>
-                      </tr>
-                    )}
                     {/* Grand total */}
                     <tr className="bg-emerald-600 text-white">
                       <td colSpan={2} className="px-4 py-3 font-extrabold text-sm uppercase tracking-wider">
-                        🏁 Grand Total Opening Stock
+                        Overall Stock Position
                       </td>
                       <td className="px-4 py-3 text-right font-extrabold text-xl">
                         {obGrandTotal}
@@ -612,7 +666,7 @@ export const Dispatch: React.FC = () => {
               )}
             </Card>
 
-            {/* ── Stock Position Save Button ──────────────────────────── */}
+            {/* ── Opening Balance Save Button ──────────────────────────── */}
             <div className="flex justify-end gap-3 pb-6">
               <Button variant="secondary" onClick={() => navigate(-1)}>{t('dispatch.cancel')}</Button>
               <Button
@@ -639,9 +693,10 @@ export const Dispatch: React.FC = () => {
                 <Input
                   label={t('dispatch.billNumber')}
                   value={form.billNumber}
-                  onChange={(e) => setF('billNumber', e.target.value)}
-                  error={formErrors.billNumber}
-                  placeholder="e.g. BILL-001"
+                  onChange={() => {}}
+                  readOnly
+                  className="bg-gray-50 cursor-not-allowed"
+                  hint={t('dispatch.billAutoHintPrefixed')}
                 />
                 <Input
                   label={t('dispatch.date')}
@@ -692,14 +747,21 @@ export const Dispatch: React.FC = () => {
                 <span>📐</span>
                 <span>
                   {t('dispatch.balanceFormula')}
-                  <span className="ml-2 text-blue-600">
-                    = {cumulativeSent} + {parseInt(form.currentQuantity) || 0} − {parseInt(form.boxesReturned) || 0}
-                    {' '}= <strong className="text-blue-900">{balanceBoxes}</strong>
-                  </span>
+                  {!isReturn ? (
+                    <span className="ml-2 text-blue-600">
+                      = {cumulativeSent} + {parseInt(form.currentQuantity) || 0} − {parseInt(form.boxesReturned) || 0}
+                      {' '}= <strong className="text-blue-900">{balanceBoxes}</strong>
+                    </span>
+                  ) : (
+                    <span className="ml-2 text-blue-600">
+                      = {cumulativeSent} − {parseInt(form.boxesReturned) || 0}
+                      {' '}= <strong className="text-blue-900">{balanceBoxes}</strong>
+                    </span>
+                  )}
                 </span>
               </div>
 
-              <div className={`grid grid-cols-2 gap-4 ${isReturn ? 'sm:grid-cols-3' : 'sm:grid-cols-4'}`}>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <div className="flex flex-col gap-1">
                   <label className="text-sm font-medium text-gray-700">{t('dispatch.totalAlreadySent')}</label>
                   <div className="flex items-center justify-center h-[38px] px-3 rounded-lg border-2 font-extrabold text-lg border-blue-300 bg-blue-50 text-blue-800">
@@ -780,7 +842,7 @@ export const Dispatch: React.FC = () => {
               </div>
             </Card>
 
-            {/* ── External Source ───────────────────────────────────────── */}
+            {/* ── External Source (Dispatch only, not Return) ─────────── */}
             {!isReturn && (
               <Card title={t('dispatch.externalSource')} subtitle={t('dispatch.externalSub')}>
                 <div className="space-y-4">
@@ -797,23 +859,94 @@ export const Dispatch: React.FC = () => {
                     </span>
                   </label>
                   {form.isExternalSource && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                      <Select
-                        label={t('dispatch.invSource')}
-                        value={form.sourceId}
-                        onChange={(e) => setF('sourceId', e.target.value)}
-                        options={sourceOpts}
-                        placeholder="— Select Source —"
-                        error={formErrors.sourceId}
-                      />
-                      <Input
-                        label={t('dispatch.extBoxCount')}
-                        type="number"
-                        min="0"
-                        value={form.externalBoxCount}
-                        onChange={(e) => setF('externalBoxCount', e.target.value)}
-                        placeholder={t('dispatch.extBoxHint')}
-                      />
+                    <div className="space-y-2">
+                      {form.externalSourceRows.length > 0 && (
+                        <>
+                          <div className="flex items-center justify-between py-2 mb-2 px-1 border-b border-gray-200">
+                            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Source Name</span>
+                            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Box Count</span>
+                            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide w-7"></span>
+                          </div>
+                          {form.externalSourceRows.map((row, idx) => {
+                            const isNewRow = row.sourceId === '';
+                            const availableSources = sources.filter(
+                              (s) => s.id === row.sourceId || !form.externalSourceRows.some((r) => r.sourceId === s.id),
+                            );
+                            const src = sources.find((s) => s.id === row.sourceId);
+                            const displayName = src?.sourceName ?? (isNewRow ? '' : 'Unknown');
+                            return (
+                            <div key={row.id} className="flex items-center gap-3 py-2 border-b border-gray-100 last:border-b-0">
+                              {isNewRow ? (
+                                <select
+                                  value={row.sourceId}
+                                  onChange={(e) => {
+                                    const rows = [...form.externalSourceRows];
+                                    rows[idx] = { ...row, sourceId: e.target.value };
+                                    setForm(p => ({ ...p, externalSourceRows: rows }));
+                                  }}
+                                  className={`flex-1 rounded-lg border px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                    formErrors[`ext_src_${idx}_id`] ? 'border-red-500' : 'border-gray-300'
+                                  }`}
+                                >
+                                  <option value="">— Select Source —</option>
+                                  {availableSources.map((s) => (
+                                    <option key={s.id} value={s.id}>{s.sourceName}</option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <span className="text-sm text-gray-700 font-medium flex-1 truncate">{displayName}</span>
+                              )}
+                              <input
+                                type="number"
+                                min="0"
+                                value={row.boxCount}
+                                onChange={(e) => {
+                                  const rows = [...form.externalSourceRows];
+                                  rows[idx] = { ...row, boxCount: e.target.value };
+                                  setForm(p => ({ ...p, externalSourceRows: rows }));
+                                }}
+                                className={`w-24 rounded-lg border px-3 py-1.5 text-sm text-right font-bold text-indigo-700 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                  formErrors[`ext_src_${idx}_count`] ? 'border-red-500' : 'border-gray-300'
+                                }`}
+                                placeholder="0"
+                              />
+                              {form.externalSourceRows.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setForm(p => ({
+                                      ...p,
+                                      externalSourceRows: p.externalSourceRows.filter((r) => r.id !== row.id),
+                                    }))
+                                  }
+                                  className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg flex-shrink-0"
+                                  title="Remove"
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              )}
+                            </div>
+                            );
+                          })}
+                          {form.externalSourceRows.reduce((s, r) => s + (parseInt(r.boxCount) || 0), 0) > 0 && (
+                            <div className="text-right text-sm text-gray-600 font-medium">
+                              Total external boxes: <span className="text-indigo-700 font-semibold">{form.externalSourceRows.reduce((s, r) => s + (parseInt(r.boxCount) || 0), 0)}</span>
+                            </div>
+                          )}
+                        </>
+                      )}
+                      <Button variant="secondary" size="sm" icon={<Plus size={15} />} onClick={() =>
+                        setForm(p => ({
+                          ...p,
+                          externalSourceRows: [...p.externalSourceRows, {
+                            id: crypto.randomUUID(),
+                            sourceId: '',
+                            boxCount: '',
+                          }],
+                        }))
+                      } className="mt-3">
+                        Add Source
+                      </Button>
                     </div>
                   )}
                 </div>

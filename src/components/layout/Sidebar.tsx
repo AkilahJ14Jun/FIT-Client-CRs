@@ -3,13 +3,14 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Users, Package, ClipboardList,
   BarChart3, ChevronLeft, ChevronRight, Database, Menu, X,
-  Settings, BookOpen, Layers, Smartphone, MapPin
+  Settings, BookOpen, Layers, Smartphone, MapPin, ShieldCheck
 } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { FishLogo } from '../ui/FishLogo';
 import { useTranslation } from '../../i18n/TranslationProvider';
+import { useAuth } from '../../auth/AuthContext';
 
-const NAV_KEYS = [
+const NAV_KEYS_BASE = [
   { to: '/', labelKey: 'sidebar.dashboard', icon: LayoutDashboard, group: 'main' },
   { to: '/customers', labelKey: 'sidebar.customers', icon: Users, group: 'main' },
   { to: '/customer-areas', labelKey: 'sidebar.customerAreas', icon: MapPin, group: 'main' },
@@ -18,6 +19,7 @@ const NAV_KEYS = [
   { to: '/dispatch', labelKey: 'sidebar.dispatch', icon: ClipboardList, group: 'main' },
   { to: '/reports', labelKey: 'sidebar.reports', icon: BarChart3, group: 'main' },
   { to: '/settings', labelKey: 'sidebar.settings', icon: Settings, group: 'system' },
+  { to: '/admin-data', labelKey: 'sidebar.adminData', icon: ShieldCheck, group: 'system', adminOnly: true },
   { to: '/architecture', labelKey: 'sidebar.architecture', icon: Layers, group: 'docs' },
   { to: '/guide', labelKey: 'sidebar.guide', icon: BookOpen, group: 'docs' },
   { to: '/mobile', labelKey: 'sidebar.mobileAccess', icon: Smartphone, group: 'docs', hidden: true },
@@ -31,8 +33,12 @@ const GROUP_KEYS = [
 
 export const Sidebar: React.FC = () => {
   const { t } = useTranslation();
+  const { user } = useAuth();
+  const isSystemAdmin = user?.isSystemAdmin === true;
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  const navItems = NAV_KEYS_BASE.filter(n => !n.adminOnly || isSystemAdmin);
 
   return (
     <>
@@ -92,7 +98,7 @@ export const Sidebar: React.FC = () => {
         {/* Navigation */}
         <nav className="flex-1 py-4 overflow-y-auto">
           {GROUP_KEYS.map((group) => {
-            const items = NAV_KEYS.filter((n) => n.group === group.id && !n.hidden);
+            const items = navItems.filter((n) => n.group === group.id && !n.hidden);
             if (!items.length) return null;
             return (
               <div key={group.id} className="mb-2">

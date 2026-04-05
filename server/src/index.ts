@@ -88,20 +88,53 @@ app.delete("/api/customers/:id", async (req, res) => {
 
 // ─── Customer Sent Count Reset Routes ─────────────────────────
 app.post("/api/customers/:id/reset-sent-count", async (req, res) => {
-  const repo = AppDataSource.getRepository(Customer);
-  const customer = await repo.findOneBy({ id: req.params.id });
-  if (!customer) return res.status(404).json({ error: "Not found" });
-  customer.totalSentCount = 0;
-  await repo.save(customer);
-  await logAudit("UPDATE", "Customer", customer.id, `Reset sent count for: ${customer.customerName}`);
-  res.json(customer);
+  try {
+    const repo = AppDataSource.getRepository(Customer);
+    const customer = await repo.findOneBy({ id: req.params.id });
+    if (!customer) return res.status(404).json({ error: "Customer not found" });
+    customer.totalSentCount = 0;
+    await repo.save(customer);
+    await logAudit("UPDATE", "Customer", customer.id, `Reset sent count for: ${customer.customerName}`);
+    res.json(customer);
+  } catch (err) {
+    console.error("Error resetting sent count for", req.params.id, err);
+    res.status(500).json({ error: "Failed to reset sent count", details: (err as Error).message });
+  }
 });
 
 app.post("/api/customers/reset-all-sent-counts", async (req, res) => {
-  const repo = AppDataSource.getRepository(Customer);
-  await repo.update({}, { totalSentCount: 0 });
-  await logAudit("UPDATE", "Customer", "all", "Reset sent count for all customers");
-  res.json({ success: true });
+  try {
+    const repo = AppDataSource.getRepository(Customer);
+    const allCustomers = await repo.find();
+    for (const customer of allCustomers) {
+      customer.totalSentCount = 0;
+      await repo.save(customer);
+    }
+    await logAudit("UPDATE", "Customer", "all", `Reset sent count for ${allCustomers.length} customers`);
+    res.json({ success: true, resetCount: allCustomers.length });
+  } catch (err) {
+    console.error("Error resetting all sent counts:", err);
+    res.status(500).json({ error: "Failed to reset sent counts", details: (err as Error).message });
+  }
+});
+
+// ─── Bulk Delete All Entries ─────────────────────────────────
+app.post("/api/entries/delete-all", async (req, res) => {
+  try {
+    const repo = AppDataSource.getRepository(BoxEntry);
+    const countResult = await repo.count();
+    if (countResult === 0) return res.json({ success: true, deletedCount: 0, message: 'No entries to delete' });
+    await repo.delete({}); // Delete all rows, keep table
+    await logAudit("DELETE", "BoxEntry", "all", `Deleted all ${countResult} entries`);
+    // Also reset all customer sent counts to complete the fresh start
+    const customerRepo = AppDataSource.getRepository(Customer);
+    await customerRepo.update({}, { totalSentCount: 0 });
+    await logAudit("UPDATE", "Customer", "all", "Reset sent count for all customers after bulk entry deletion");
+    res.json({ success: true, deletedCount: countResult });
+  } catch (err) {
+    console.error("Error deleting all entries:", err);
+    res.status(500).json({ error: "Failed to delete entries", details: (err as Error).message });
+  }
 });
 
 // ─── InventorySource Routes ──────────────────────────────────

@@ -210,22 +210,13 @@ export const CustomerDB = {
   async resetSentCount(id: string): Promise<Customer | null> {
     try {
       return await apiFetch<Customer>(`/customers/${id}/reset-sent-count`, { method: 'POST' });
-    } catch (err) {
-      console.error('Failed to reset sent count for customer', id, err);
-      return null;
-    }
+    } catch { return null; }
   },
   async resetAllSentCounts(): Promise<boolean> {
     try {
       await apiFetch('/customers/reset-all-sent-counts', { method: 'POST' });
       return true;
-    } catch (err) {
-      console.error('Failed to reset all sent counts:', err);
-      return false;
-    }
-  },
-  async deleteAllEntries(): Promise<{ success: boolean; deletedCount?: number }> {
-    return apiFetch('/entries/delete-all', { method: 'POST' });
+    } catch { return false; }
   },
 };
 
@@ -369,132 +360,19 @@ export const EntryDB = {
     const all = await this.getAll();
     return all.length;
   },
-  /** Returns the LIVE stock position by taking the latest opening_balance entry
-   *  and adjusting each component (company + per-source) for all subsequent
-   *  dispatch and return entries. Shows ALL active inventory sources in the system.
-   */
-  async getLiveStockPosition(): Promise<{
-    entry: BoxEntry | null;
-    liveCompanyQty: number;
-    liveSources: Array<{ sourceId: string; sourceName: string; quantity: number }>;
-    liveTotal: number;
-  }> {
-    const all = await this.getAll();
-    // Find the most recent stock position entry
-    const obEntries = all
-      .filter((e) => e.entryType === 'opening_balance')
-      .sort((a, b) => b.entryDate.localeCompare(a.entryDate));
-    const ob = obEntries[0] ?? null;
-    const obSources = ob?.openingStockSources ?? [];
-
-    // Sum own-inventory dispatches and returns (non-external)
-    const ownDispatched = all
-      .filter((e) => e.entryType === 'dispatch' && !e.isExternalSource)
-      .reduce((s, e) => s + (e.currentQuantity || 0), 0);
-    const ownReturned = all
-      .filter((e) => e.entryType === 'return')
-      .reduce((s, e) => s + (e.boxesReturned || 0), 0);
-
-    const liveCompanyQty = Math.max(0, (ob?.companyOwnQuantity ?? 0) - ownDispatched + ownReturned);
-
-    // Get all active sources to ensure ALL are shown in summary, even if
-    // they were never part of a stock position entry
-    const allSources = await SourceDB.getAll();
-    const liveSources: Array<{ sourceId: string; sourceName: string; quantity: number }> = [];
-
-    // Start with sources defined in the latest stock position, with their
-    // original quantity minus external dispatches
-    const seenSourceIds = new Set<string>();
-    for (const src of obSources) {
-      const srcDispatched = all
-        .filter((e) => e.entryType === 'dispatch' && e.isExternalSource && e.sourceId === src.sourceId)
-        .reduce((s, e) => s + (e.externalBoxCount || 0), 0);
-      liveSources.push({
-        sourceId: src.sourceId,
-        sourceName: src.sourceName,
-        quantity: Math.max(0, src.quantity - srcDispatched),
-      });
-      seenSourceIds.add(src.sourceId);
-    }
-
-    // Append any active sources NOT in the stock position (newly added ones)
-    for (const src of allSources) {
-      if (!src.isActive || seenSourceIds.has(src.id)) continue;
-      const srcDispatched = all
-        .filter((e) => e.entryType === 'dispatch' && e.isExternalSource && e.sourceId === src.id)
-        .reduce((s, e) => s + (e.externalBoxCount || 0), 0);
-      liveSources.push({
-        sourceId: src.id,
-        sourceName: src.sourceName,
-        quantity: Math.max(0, -srcDispatched),
-      });
-    }
-
-    const liveTotal = liveCompanyQty + liveSources.reduce((s, r) => s + r.quantity, 0);
-    return { entry: ob, liveCompanyQty, liveSources, liveTotal };
-  },
-
-  /** CR6: After a dispatch or return is saved, find the latest stock position
-   *  entry and update its companyOwnQuantity and openingStockSources quantities.
-   *  - Dispatch (own):     companyOwnQuantity -= currentQuantity
-   *  - Dispatch (external): source[sourceId].quantity -= externalBoxCount
-   *  - Return:             companyOwnQuantity += boxesReturned
-   */
-  async updateStockPositionAfterEntry(savedEntry: BoxEntry): Promise<void> {
-    const all = await this.getAll();
-    const obEntries = all
-      .filter((e) => e.entryType === 'opening_balance')
-      .sort((a, b) => b.entryDate.localeCompare(a.entryDate));
-    const ob = obEntries[0];
-    if (!ob) return; // No stock position to update
-
-    let newCompanyQty = ob.companyOwnQuantity ?? 0;
-    let newSources    = (ob.openingStockSources ?? []).map((s) => ({ ...s }));
-
-    if (savedEntry.entryType === 'dispatch') {
-      if (savedEntry.isExternalSource && savedEntry.sourceId) {
-        // Deduct from the matching external source
-        newSources = newSources.map((s) =>
-          s.sourceId === savedEntry.sourceId
-            ? { ...s, quantity: Math.max(0, s.quantity - (savedEntry.externalBoxCount ?? 0)) }
-            : s
-        );
-      } else {
-        // Deduct from company own inventory
-        newCompanyQty = Math.max(0, newCompanyQty - (savedEntry.currentQuantity ?? 0));
-      }
-    } else if (savedEntry.entryType === 'return') {
-      // Returns replenish company own inventory
-      newCompanyQty = newCompanyQty + (savedEntry.boxesReturned ?? 0);
-    }
-
-    const newTotal = newCompanyQty + newSources.reduce((s, r) => s + r.quantity, 0);
-    await this.update(ob.id, {
-      companyOwnQuantity:  newCompanyQty,
-      openingStockSources: newSources,
-      currentQuantity:     newTotal,
-      balanceBoxes:        newTotal,
-    });
-  },
-
-  async nextBillNumber(entryType?: string): Promise<string> {
-    const [settings, entries] = await Promise.all([SettingsDB.get(), this.getAll()]);
-    const prefix = settings.billPrefix || 'BILL';
+  async nextBillNumber(): Promise<string> {
+    const entries = await this.getAll();
     const nums = entries
       .map((e) => {
-        // Extract numeric portion from any format: '000001', 'BILL-000001', 'BILL-001'
-        const m = e.billNumber.match(/(\d+)$/);
-        return m ? parseInt(m[1], 10) : 0;
+        // Support both legacy 'PREFIX-NNNN' and new pure 6-digit formats
+        const m6 = e.billNumber.match(/^(\d{6})$/);
+        if (m6) return parseInt(m6[1], 10);
+        const mPfx = e.billNumber.match(/-(\d+)$/);
+        return mPfx ? parseInt(mPfx[1], 10) : 0;
       })
       .filter(Boolean);
     const next = nums.length > 0 ? Math.max(...nums) + 1 : 1;
-    const sixDigit = String(next).padStart(6, '0');
-    // Stock Position entries: plain 6-digit number (no prefix)
-    // Dispatch / Return entries: prefix-6digit (e.g. BILL-000001)
-    if (entryType === 'opening_balance') {
-      return sixDigit;
-    }
-    return `${prefix}-${sixDigit}`;
+    return String(next).padStart(6, '0');
   },
 };
 

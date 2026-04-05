@@ -51,6 +51,10 @@ export const Settings: React.FC = () => {
   const [selectedResetCustomer, setSelectedResetCustomer] = useState('');
   const [sentCountResetDone, setSentCountResetDone] = useState(false);
   const [sentCountResetError, setSentCountResetError] = useState('');
+  const [deleteAllConfirm, setDeleteAllConfirm] = useState(false);
+  const [deleteAllDone, setDeleteAllDone] = useState(false);
+  const [deleteAllError, setDeleteAllError] = useState('');
+  const [deletingAll, setDeletingAll] = useState(false);
 
   // User management state
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
@@ -174,6 +178,26 @@ export const Settings: React.FC = () => {
     }
   };
 
+  const handleDeleteAllEntries = async () => {
+    setDeletingAll(true);
+    setDeleteAllError('');
+    setDeleteAllDone(false);
+    try {
+      const result = await CustomerDB.deleteAllEntries();
+      if (result.success) {
+        setDeleteAllDone(true);
+        setSentCountCustomers(prev => prev.map(c => ({ ...c, totalSentCount: 0 })));
+        setTimeout(() => setDeleteAllDone(false), 4000);
+      } else {
+        setDeleteAllError('Failed to delete entries');
+      }
+    } catch (err) {
+      setDeleteAllError(`Failed to delete entries: ${(err as Error).message}`);
+    } finally {
+      setDeletingAll(false);
+    }
+  };
+
   // ── User Management handlers ──
   const resetUserForm = () => {
     setUserForm({ username: '', password: '', displayName: '', isAdmin: false, isActive: true });
@@ -279,9 +303,10 @@ export const Settings: React.FC = () => {
   ];
 
   const TABS = ALL_TABS.filter(
-    (t) => (t.id !== 'backup' && t.id !== 'users') ||
+    (t) => (t.id !== 'backup' && t.id !== 'users' && t.id !== 'sentCount') ||
            (t.id === 'backup' && user?.isSystemAdmin === true) ||
-           (t.id === 'users' && canManageUsers)
+           (t.id === 'users' && canManageUsers) ||
+           (t.id === 'sentCount' && user?.isSystemAdmin === true)
   );
 
   // Redirect away from restricted tabs if user loses access
@@ -292,6 +317,10 @@ export const Settings: React.FC = () => {
   useEffect(() => {
     if (tab === 'users' && !canManageUsers) setTab('company');
   }, [tab, canManageUsers]);
+
+  useEffect(() => {
+    if (tab === 'sentCount' && user?.isSystemAdmin !== true) setTab('company');
+  }, [tab, user]);
 
   const actionBadge: Record<string, 'blue' | 'green' | 'orange'> = {
     CREATE: 'green', UPDATE: 'blue', DELETE: 'orange',
@@ -688,9 +717,39 @@ export const Settings: React.FC = () => {
                 {t('settings.resetAllBtn')}
               </Button>
             </div>
+
+            {/* Delete ALL entries for fresh setup */}
+            <div className="pt-6 border-t border-gray-100 mt-4">
+              <h4 className="text-sm font-semibold text-red-800 mb-2">Fresh Business Setup</h4>
+              <p className="text-xs text-gray-500 mb-3">
+                Delete all dispatch, return, and stock position entries. Reset all customer sent counts to 0.
+                Only customers, areas, and sources will be preserved.
+              </p>
+              {deleteAllDone && (
+                <div className="mb-4 p-3 rounded-lg text-sm bg-emerald-50 text-emerald-800 flex items-center gap-2">
+                  <CheckCircle size={16} /> All entries deleted successfully. You can now start fresh.
+                </div>
+              )}
+              {deleteAllError && (
+                <div className="mb-4 p-3 rounded-lg text-sm bg-red-50 text-red-700 flex items-center gap-2">
+                  <AlertTriangle size={16} /> {deleteAllError}
+                </div>
+              )}
+              <Button
+                variant="danger"
+                icon={<Trash2 size={14} />}
+                onClick={() => setDeleteAllConfirm(true)}
+                disabled={deletingAll}
+              >
+                {deletingAll ? 'Deleting...' : 'Clear All Entries & Reset Sent Counts'}
+              </Button>
+            </div>
           </div>
         </div>
       )}
+
+      <ConfirmModal open={deleteAllConfirm} onClose={() => setDeleteAllConfirm(false)} onConfirm={handleDeleteAllEntries}
+        title="Delete All Entries?" message="This will permanently delete all dispatch, return, and stock position entries. It will also reset all customer sent counts to 0. Customers, areas, and sources will NOT be affected. This action cannot be undone." confirmLabel="Yes, Delete All Entries" variant="danger" />
     </div>
   );
 };
