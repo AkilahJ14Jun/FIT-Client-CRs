@@ -1,5 +1,6 @@
 import React, { useState, FormEvent } from 'react';
-import { Fish, Lock, User, AlertCircle } from 'lucide-react';
+import { Lock, User, AlertCircle } from 'lucide-react';
+import loginIcon from '../assets/fit_login_icon.png';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { useTranslation } from '../i18n/TranslationProvider';
@@ -36,7 +37,7 @@ export const Login: React.FC = () => {
         {/* Logo Card */}
         <div className="bg-white/10 backdrop-blur-lg rounded-3xl border border-white/20 p-8 mb-6">
           <div className="flex items-center justify-center gap-3 mb-4">
-            <Fish size={40} className="text-cyan-300" />
+            <img src={loginIcon} alt="FIT Login Icon" className="w-24 h-24 object-contain" />
             <div>
               <h1 className="text-3xl font-extrabold text-white tracking-wider">FIT</h1>
               <p className="text-xs text-blue-300 font-medium">Fish Inventory Tracking</p>

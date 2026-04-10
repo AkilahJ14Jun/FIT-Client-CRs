@@ -21,6 +21,7 @@ export interface Customer {
   shopName: string;
   address: string;
   mobile: string;
+  alternateMobile?: string;
   email?: string;
   notes?: string;
   areaId?: string;

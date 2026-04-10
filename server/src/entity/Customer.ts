@@ -18,6 +18,9 @@ export class Customer {
   mobile!: string;
 
   @Column({ nullable: true })
+  alternateMobile?: string;
+
+  @Column({ nullable: true })
   email?: string;
 
   @Column({ type: "text", nullable: true })

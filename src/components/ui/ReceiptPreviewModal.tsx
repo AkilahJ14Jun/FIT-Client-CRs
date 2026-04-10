@@ -28,6 +28,7 @@ interface Props {
   entry:    BoxEntry | null;
   customer: Customer | null;
   onClose:  () => void;
+  onUseAlternatePhone?: (useAlternate: boolean) => void;
 }
 
 const ENTRY_TYPE_META: Record<string, { label: string; colour: string; bg: string }> = {
@@ -39,15 +40,28 @@ const ENTRY_TYPE_META: Record<string, { label: string; colour: string; bg: strin
 };
 
 export const ReceiptPreviewModal: React.FC<Props> = ({
-  open, entry, customer, onClose,
+  open, entry, customer, onClose, onUseAlternatePhone,
 }) => {
-  const [printed,     setPrinted]     = useState(false);
-  const [showWAModal, setShowWAModal] = useState(false);
+  const [printed,           setPrinted]           = useState(false);
+  const [showWAModal,       setShowWAModal]       = useState(false);
+  const [useAlternatePhone, setUseAlternatePhone] = useState(false);
 
   // Reset state whenever a new entry arrives
   useEffect(() => {
-    if (open) { setPrinted(false); setShowWAModal(false); }
+    if (open) {
+      setPrinted(false);
+      setShowWAModal(false);
+      setUseAlternatePhone(false);
+      onUseAlternatePhone?.(false);
+    }
   }, [open, entry?.id]);
+
+  const hasAlternate = !!customer?.alternateMobile?.trim();
+
+  // Effective customer with chosen phone number for WhatsApp sharing
+  const effectiveCustomer = useAlternatePhone && hasAlternate && customer
+    ? { ...customer, mobile: customer.alternateMobile || customer.mobile }
+    : customer;
 
   // Close on Escape
   useEffect(() => {
@@ -69,7 +83,7 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
     setPrinted(true);
   };
 
-  // Open the 3-step WhatsAppSendModal
+  // Open the 3-step WhatsAppSendModal with the effective customer (chosen phone)
   const handleWhatsApp = () => {
     setShowWAModal(true);
   };
@@ -137,6 +151,12 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
                 <p className="text-xs text-gray-500">Mobile</p>
                 <p className="font-medium text-gray-700">{customer.mobile || '—'}</p>
               </div>
+              {customer.alternateMobile && (
+                <div>
+                  <p className="text-xs text-gray-500">Alternate Mobile</p>
+                  <p className="font-medium text-gray-700">{customer.alternateMobile || '—'}</p>
+                </div>
+              )}
               <div>
                 <p className="text-xs text-gray-500">Date</p>
                 <p className="font-medium text-gray-700 flex items-center gap-1">
@@ -145,6 +165,24 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
               </div>
             </div>
           </div>
+
+          {/* Phone number toggle for WhatsApp sharing */}
+          {hasAlternate && (
+            <label className="flex items-center gap-3 cursor-pointer select-none rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+              <input
+                type="checkbox"
+                checked={useAlternatePhone}
+                onChange={(e) => {
+                  setUseAlternatePhone(e.target.checked);
+                  onUseAlternatePhone?.(e.target.checked);
+                }}
+                className="w-4 h-4 accent-green-600"
+              />
+              <span className="text-sm text-gray-700">
+                Use alternate contact number (<span className="font-semibold">{customer.alternateMobile}</span>) for WhatsApp sharing
+              </span>
+            </label>
+          )}
 
           {/* Box movement summary */}
           <div className="rounded-xl border border-gray-100 overflow-hidden">
@@ -308,9 +346,9 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
           </div>
 
           {/* No-phone warning */}
-          {!customer.mobile?.trim() && (
+          {!effectiveCustomer?.mobile?.trim() && (
             <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-center">
-              ⚠️ No mobile number saved for this customer — WhatsApp sharing requires a phone number.
+              No mobile number {useAlternatePhone ? '(alternate)' : ''} saved for this customer — WhatsApp sharing requires a phone number.
               <br />Please update the customer record first.
             </p>
           )}
@@ -329,7 +367,7 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
       <WhatsAppSendModal
         open={showWAModal}
         entry={entry}
-        customer={customer}
+        customer={effectiveCustomer}
         onClose={() => setShowWAModal(false)}
       />
     </div>

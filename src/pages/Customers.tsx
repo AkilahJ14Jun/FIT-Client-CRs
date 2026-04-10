@@ -12,6 +12,7 @@ type FormState = {
   shopName: string;
   address: string;
   mobile: string;
+  alternateMobile: string;
   email: string;
   notes: string;
   areaId: string;
@@ -19,7 +20,7 @@ type FormState = {
 };
 
 const EMPTY: FormState = {
-  customerName: '', shopName: '', address: '', mobile: '', email: '', notes: '', areaId: '', isActive: true,
+  customerName: '', shopName: '', address: '', mobile: '', alternateMobile: '', email: '', notes: '', areaId: '', isActive: true,
 };
 
 export const Customers: React.FC = () => {
@@ -52,6 +53,7 @@ export const Customers: React.FC = () => {
       c.customerName.toLowerCase().includes(search.toLowerCase()) ||
       c.shopName.toLowerCase().includes(search.toLowerCase()) ||
       c.mobile.includes(search) ||
+      (c.alternateMobile || '').includes(search) ||
       (c.email || '').toLowerCase().includes(search.toLowerCase())
   );
 
@@ -73,6 +75,7 @@ export const Customers: React.FC = () => {
       shopName: c.shopName,
       address: c.address,
       mobile: c.mobile,
+      alternateMobile: c.alternateMobile || '',
       email: c.email || '',
       notes: c.notes || '',
       areaId: c.areaId || '',
@@ -182,7 +185,15 @@ export const Customers: React.FC = () => {
                 {c.mobile && (
                   <p className="flex items-center gap-1.5">
                     <Phone size={11} className="text-gray-400" />
+                    <span className="text-gray-400 text-[10px]">Primary:</span>
                     <a href={`tel:${c.mobile}`} className="hover:text-blue-600">{c.mobile}</a>
+                  </p>
+                )}
+                {c.alternateMobile && (
+                  <p className="flex items-center gap-1.5">
+                    <Phone size={11} className="text-gray-400" />
+                    <span className="text-gray-400 text-[10px]">Alt:</span>
+                    <a href={`tel:${c.alternateMobile}`} className="hover:text-blue-600">{c.alternateMobile}</a>
                   </p>
                 )}
                 {c.email && (
@@ -247,6 +258,13 @@ export const Customers: React.FC = () => {
               onChange={(e) => setForm((f) => ({ ...f, mobile: e.target.value }))}
               error={errors.mobile}
               placeholder={t('cust.placeholderMobile')}
+              type="tel"
+            />
+            <Input
+              label="Alternate Mobile"
+              value={form.alternateMobile}
+              onChange={(e) => setForm((f) => ({ ...f, alternateMobile: e.target.value }))}
+              placeholder="Alternate mobile number"
               type="tel"
             />
             <Input
