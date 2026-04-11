@@ -1,0 +1,79 @@
+ The key points are:
+  - Frontend tech stack: React, TypeScript, Vite, Tailwind, React Router
+  - Backend: Express, TypeORM, MySQL
+  - Database: MySQL with Docker Compose
+  - WhatsApp sharing via Windows protocol
+  - API routes and data flow between frontend and backend
+
+  The architecture diagram should include these components and their relationships. Since I can't actually create
+  images, I'll describe it in text or suggest using a tool like draw.io or Lucidchart. However, the user might expect a
+  textual representation or steps to generate the diagram.
+
+  Alternatively, using the Write tool to create a markdown file with the diagram description. But the user might prefer
+  a visual. Since I can't generate images, I'll outline the components and their connections clearly so the user can
+  create the diagram based on this description.
+
+  Also, considering the tools available, maybe using the Agent tool with the Explore agent to gather more info, but
+  since the README already provides comprehensive details, that might not be necessary. The Grep tool could check
+  specific files for architecture mentions, but again, the README seems sufficient.
+
+  So, the next step is to compile the architecture details from the README into a structured format, perhaps a
+  text-based diagram, and present it to the user. If they need a visual, I can guide them on creating it using the
+  information provided.
+  I'll create a textual representation of the architecture diagram for the FIT Client CRs project based on the
+  information in the README.md. This can be visualized as a layered architecture:
+
+  +-----------------------------+
+  |    FRONTEND (React)         |
+  | - React 19 + TypeScript     |
+  | - Vite build tool           |
+  | - Tailwind CSS v4           |
+  | - React Router v7           |
+  | - Components:               |
+  |   - Layout (Sidebar/TopBar) |
+  |   - UI Elements (Buttons, Modals) |
+  |   - Pages (Customers, Sources, etc.) |
+  | - Data Flow:                 |
+  |   - Calls /api endpoint      |
+  |   - Real-time updates        |
+  +-----------------------------+
+
+  +-----------------------------+
+  |    BACKEND (Express.js)     |
+  | - REST API endpoints        |
+  | - TypeORM ORM               |
+  | - MySQL database            |
+  | - Audit logging             |
+  | - Bill number generator     |
+  | - Authentication (Basic)    |
+  | - PowerShell integrations    |
+  +-----------------------------+
+
+  +-----------------------------+
+  |    DATABASE (MySQL)         |
+  | - Docker container          |
+  | - Tables:                    |
+  |   - customer                 |
+  |   - box_entry                |
+  |   - inventory_source         |
+  |   - audit_log                |
+  | - Connection details:        |
+  |   - Host: localhost:3308     |
+  |   - DB: fit_db               |
+  |   - Users: fit_user/fit_password|
+  +-----------------------------+
+
+  +-----------------------------+
+  |    EXTERNAL SERVICES        |
+  | - WhatsApp sharing (Windows) |
+  | - OS-level protocol handler  |
+  | - PowerShell scripts         |
+  | - Zero-API cost sharing      |
+  +-----------------------------+
+
+  Key architectural relationships:
+  1. Frontend → Backend: All data requests go through the /api proxy (localhost:3001)
+  2. Backend → Database: TypeORM ORM handles database interactions
+  3. Backend → WhatsApp: PowerShell scripts handle OS-level protocol
+  4. Database → Frontend: Data is returned through API responses
+  5. Frontend → WhatsApp: PDF receipts are generated and shared via browser

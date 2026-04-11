@@ -1,4 +1,32 @@
-# FIT (Fish Inventory Tracking) - Windows Production Deployment Guide
+# FIT (Fish Inventory Tracking) — Windows Production Deployment Guide
+
+> **Last updated:** April 2026 · **Stack:** React + Vite · Express.js + TypeORM · MySQL 8.0 (Docker) · Nginx · Windows
+
+---
+
+## Quick Deploy (Automated)
+
+For a one-command deployment, use the automated script. It handles Steps 2–9 below automatically.
+
+Open PowerShell **as Administrator** from the project root:
+
+```powershell
+.\deploy-production.ps1
+```
+
+**Optional flags:**
+
+| Flag | Purpose |
+|------|---------|
+| `-InstallRoot "D:\FIT"` | Install to a custom directory (default: `C:\FIT`) |
+| `-NginxRoot "D:\nginx"` | Custom Nginx location (default: `C:\nginx`) |
+| `-SkipWhatsApp` | Skip WhatsApp `fitshare://` protocol registration |
+| `-SkipFirewall` | Skip Windows Firewall rule creation |
+| `-Force` | Overwrite existing files at `-InstallRoot` |
+
+> After the script finishes, jump to [Step 10: Verify the Deployment](#step-10-verify-the-deployment) to confirm everything is working.
+
+---
 
 ## Prerequisites
 
@@ -54,7 +82,7 @@ docker compose version
 
 1. Download the stable Windows zip from <https://nginx.org/en/download.html>
 2. Extract the zip to `C:\nginx` (or your preferred location)
-3. You will configure this later in Step 5
+3. You will configure this later in Step 6
 
 ### 1.5 Download NSSM
 
@@ -101,6 +129,7 @@ cd C:\FIT\server
 The existing `.env` file already contains the correct defaults. If you changed credentials in `docker-compose.yml`, update `.env` to match:
 
 ```env
+NODE_ENV=production
 DB_HOST=localhost
 DB_PORT=3308
 DB_USER=fit_user
@@ -117,7 +146,7 @@ npx tsc
 
 This produces JavaScript output in `server/dist/`.
 
-> `synchronize: true` in `data-source.ts` means TypeORM will auto-create tables on first run. For production, set `synchronize: false` after the initial setup and use migrations instead.
+> **Production note:** `synchronize: true` in `data-source.ts` means TypeORM will auto-create/update tables on first run. After the initial setup with all tables created correctly, consider setting `synchronize: false` and using migrations to prevent unintended schema changes.
 
 ### 2.4 Build the Frontend
 
@@ -208,6 +237,12 @@ http {
     sendfile      on;
     keepalive_timeout  65;
 
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
     server {
         listen       80;
         server_name  localhost;  # Change to your domain if using one
@@ -227,12 +262,24 @@ http {
             proxy_set_header    X-Real-IP $remote_addr;
             proxy_set_header    X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header    X-Forwarded-Proto $scheme;
+
+            # Timeouts for long-running requests
+            proxy_connect_timeout 60s;
+            proxy_send_timeout    60s;
+            proxy_read_timeout    60s;
         }
 
         # Enable gzip compression
         gzip on;
-        gzip_types text/plain text/css application/json application/javascript text/xml;
+        gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
         gzip_min_length 256;
+
+        # Cache static assets (30 days)
+        location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+            root   C:/FIT/dist;
+            expires 30d;
+            add_header Cache-Control "public, immutable";
+        }
     }
 }
 ```
@@ -258,6 +305,9 @@ You should see `test is successful`. Start Nginx:
 >
 > ```powershell
 > nssm install fit-nginx C:\nginx\nginx.exe
+> nssm set fit-nginx AppDirectory C:\nginx
+> nssm set fit-nginx DisplayName "FIT Nginx Reverse Proxy"
+> nssm set fit-nginx Start SERVICE_AUTO_START
 > nssm start fit-nginx
 > ```
 
@@ -286,10 +336,10 @@ This step enables the app to send PDF receipts via WhatsApp Web with no API cost
 
 ### 5.1 Update script paths in `RegisterProtocol.ps1`
 
-Open `C:\FIT\scripts\RegisterProtocol.ps1` and update these two paths to match your installation:
+Open `C:\FIT\scripts\RegisterProtocol.ps1` and verify the script path matches your installation:
 
 ```powershell
-$ScriptPath = "C:\FIT\scripts\FITShareFinal.ps1"    # or FITShareFinal.ps1's actual path
+$ScriptPath = "C:\FIT\scripts\FITShareFinal.ps1"
 ```
 
 > If you prefer the more advanced handler (`ShareOnWhatsApp.ps1`), copy it over `FITShareFinal.ps1` or point `$ScriptPath` to it.
@@ -416,24 +466,7 @@ It should only show `127.0.0.1:3308` or `0.0.0.0:3308` — the latter means any 
 
 ---
 
-## Step 8: Verify the Deployment
-
-1. **Frontend:** Open a browser and go to `http://localhost` (or `http://<server-ip>` if accessing from another machine on the network)
-2. **API:** Run in PowerShell:
-
-   ```powershell
-   Invoke-RestMethod -Uri http://localhost/api/settings
-   ```
-
-3. **Login:** Use default credentials:
-   - **System Admin**: username: `System Admin`, password: `Clasic@104`
-   - **Admin**: username: `Admin`, password: `AS@traders`
-
-> **Critical:** Change these default passwords on first login from the Settings page!
-
----
-
-## Step 9: Auto-Start on Boot
+## Step 8: Auto-Start on Boot
 
 Ensure all services start automatically when Windows restarts:
 
@@ -461,6 +494,70 @@ If you installed them as NSSM services (`fit-backend`, `fit-nginx`), they will a
 
 ---
 
+## Step 9: Backup & Restore
+
+### Automated Backups
+
+Use the included `backup-restore.ps1` script to manage database backups:
+
+```powershell
+# Create a backup (saved to C:\FIT\backups\)
+.\backup-restore.ps1 -Action backup
+
+# List available backups
+.\backup-restore.ps1 -Action list
+
+# Restore from a specific backup
+.\backup-restore.ps1 -Action restore -BackupFile "C:\FIT\backups\fit_db_2026-04-11_083000.sql"
+```
+
+### Scheduled Daily Backups
+
+Register a Windows Scheduled Task for daily automated backups:
+
+```powershell
+$action  = New-ScheduledTaskAction `
+    -Execute "powershell.exe" `
+    -Argument "-ExecutionPolicy Bypass -File C:\FIT\backup-restore.ps1 -Action backup" `
+    -WorkingDirectory "C:\FIT"
+$trigger = New-ScheduledTaskTrigger -Daily -At "02:00AM"
+Register-ScheduledTask -TaskName "FIT-DailyBackup" -Action $action -Trigger $trigger -RunLevel Highest
+```
+
+The script automatically keeps the latest **30 backups** and cleans up older ones.
+
+### Manual Backup (without script)
+
+```powershell
+docker exec fit_mysql_db mysqldump -uroot -proot --single-transaction fit_db > C:\FIT\backups\manual_backup.sql
+```
+
+### Manual Restore (without script)
+
+```powershell
+Get-Content C:\FIT\backups\manual_backup.sql -Raw | docker exec -i fit_mysql_db mysql -uroot -proot fit_db
+nssm restart fit-backend
+```
+
+---
+
+## Step 10: Verify the Deployment
+
+1. **Frontend:** Open a browser and go to `http://localhost` (or `http://<server-ip>` if accessing from another machine on the network)
+2. **API:** Run in PowerShell:
+
+   ```powershell
+   Invoke-RestMethod -Uri http://localhost/api/settings
+   ```
+
+3. **Login:** Use default credentials:
+   - **System Admin**: username: `System Admin`, password: `Clasic@104`
+   - **Admin**: username: `Admin`, password: `AS@traders`
+
+> **Critical:** Change these default passwords on first login from the Settings page!
+
+---
+
 ## Quick Reference
 
 | Component | Port | Management |
@@ -475,23 +572,100 @@ If you installed them as NSSM services (`fit-backend`, `fit-nginx`), they will a
 # Restart backend service
 nssm restart fit-backend
 
-# View backend logs
+# View backend logs (last 50 lines)
 Get-Content C:\FIT\server\logs\stderr.log -Tail 50
 
-# Rebuild frontend
+# Rebuild & redeploy frontend
 cd C:\FIT && npm run build && cd C:\nginx && .\nginx.exe -s reload
 
 # Check all services
-Get-Service -Name fit-backend, fit-nginx  # if NSSM services
-docker ps                                  # MySQL
+nssm status fit-backend
+nssm status fit-nginx
+docker ps
 
 # Update deployment (pull new code)
 cd C:\FIT
 git pull
-npm run build
-npx tsc --project server\tsconfig.json
+npm install && npm run build                      # Frontend
+cd server && npm install && npx tsc && cd ..      # Backend
 nssm restart fit-backend
 cd C:\nginx; .\nginx.exe -s reload
+
+# Database backup
+.\backup-restore.ps1 -Action backup
+```
+
+---
+
+## Troubleshooting
+
+### Backend won't start / NSSM shows SERVICE_STOPPED
+
+```powershell
+# Check error logs
+Get-Content C:\FIT\server\logs\stderr.log -Tail 100
+
+# Common causes:
+# 1. MySQL not running → docker compose up -d
+# 2. Port 3001 already in use → netstat -ano | findstr 3001
+# 3. TypeScript not compiled → cd C:\FIT\server && npx tsc
+# 4. Missing .env → verify C:\FIT\server\.env exists with correct DB credentials
+```
+
+### Frontend shows blank page or 404
+
+```powershell
+# Verify dist/ folder exists and is non-empty
+dir C:\FIT\dist
+
+# Rebuild if needed
+cd C:\FIT && npm run build
+
+# Reload Nginx after rebuild
+cd C:\nginx && .\nginx.exe -s reload
+```
+
+### MySQL connection refused
+
+```powershell
+# Check if container is running
+docker ps -a | findstr fit_mysql
+
+# Restart the container
+docker compose -f C:\FIT\docker-compose.yml up -d
+
+# Check container logs
+docker logs fit_mysql_db --tail 50
+
+# Test connection directly
+docker exec fit_mysql_db mysql -ufit_user -pfit_password -e "SELECT 1"
+```
+
+### WhatsApp sharing not working
+
+```powershell
+# 1. Verify protocol is registered
+Get-ItemProperty "HKCU:\Software\Classes\fitshare\shell\open\command"
+
+# 2. Test the protocol manually
+Start-Process "fitshare://test"
+
+# 3. Re-register the protocol (run as Admin)
+cd C:\FIT\scripts && .\RegisterProtocol.ps1
+
+# 4. Ensure WhatsApp Web is logged in and the browser (Edge/Chrome) is open
+```
+
+### Port conflicts
+
+```powershell
+# Find what's using a specific port
+netstat -ano | findstr :80
+netstat -ano | findstr :3001
+netstat -ano | findstr :3308
+
+# Kill a process by PID
+Stop-Process -Id <PID> -Force
 ```
 
 ---
@@ -504,7 +678,7 @@ cd C:\nginx; .\nginx.exe -s reload
 - [ ] Nginx for Windows extracted to `C:\nginx`
 - [ ] Project cloned/copied to `C:\FIT`
 - [ ] MySQL container running (`docker compose up -d`)
-- [ ] Backend `.env` verified with correct DB credentials
+- [ ] Backend `.env` verified with correct DB credentials and `NODE_ENV=production`
 - [ ] Backend installed and compiled (`cd server && npm install && npx tsc`)
 - [ ] Backend running as Windows Service via NSSM (`nssm start fit-backend`)
 - [ ] Frontend built (`npm run build`)
@@ -516,6 +690,7 @@ cd C:\nginx; .\nginx.exe -s reload
 - [ ] MySQL port NOT exposed to the internet
 - [ ] Default admin passwords changed
 - [ ] Auto-start on boot configured (Scheduled Task for MySQL, NSSM for backend + Nginx)
+- [ ] Daily backup scheduled (`FIT-DailyBackup` task)
 - [ ] Tested frontend, API, and login from a browser
 - [ ] Tested WhatsApp PDF sharing from the app
-- [ ] Backup strategy in place
+- [ ] Backup strategy verified (run `.\backup-restore.ps1 -Action backup` and confirm)

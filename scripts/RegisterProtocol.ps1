@@ -3,7 +3,7 @@
 
 $ProtocolName = "fitshare"
 $PowerShellPath = "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
-$ScriptPath = "g:\bobby\GitHub\FIT OpBal Fix - Copy\scripts\FITShareFinal.ps1"
+$ScriptPath = "C:\FIT\scripts\FITShareFinal.ps1"
 
 # The command needs to be VERY robust to handle the full URI string with special characters
 # We use -WindowStyle Hidden to prevent the PowerShell console from flashing
