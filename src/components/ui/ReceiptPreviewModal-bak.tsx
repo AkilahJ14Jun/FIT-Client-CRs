@@ -1,12 +1,6 @@
 // FIT – Receipt Preview Modal
 // Shown immediately after a Dispatch / Return entry is saved.
-//
-// On DESKTOP: "Automated Share via WhatsApp" opens the 3-step WhatsAppSendModal
-//             which guides the user through the fitshare:// automation flow.
-//
-// On MOBILE:  "Share via WhatsApp" directly downloads the PDF and opens the
-//             WhatsApp app via wa.me — no guided modal needed since the Windows
-//             automation is not available on mobile.
+// "Send via WhatsApp" opens the 3-step WhatsAppSendModal.
 
 import React, { useEffect, useState } from 'react';
 import {
@@ -23,14 +17,9 @@ import {
   Scale,
   Truck,
   FileText,
-  Smartphone,
 } from 'lucide-react';
 import type { BoxEntry, Customer } from '../../db/database';
-import {
-  downloadReceiptAsPDF,
-  isMobileDevice,
-  shareMobile,
-} from '../../utils/customerReceipt';
+import { downloadReceiptAsPDF } from '../../utils/customerReceipt';
 import { WhatsAppSendModal } from './WhatsAppSendModal';
 import { format } from 'date-fns';
 
@@ -39,6 +28,7 @@ interface Props {
   entry:    BoxEntry | null;
   customer: Customer | null;
   onClose:  () => void;
+  onUseAlternatePhone?: (useAlternate: boolean) => void;
 }
 
 const ENTRY_TYPE_META: Record<string, { label: string; colour: string; bg: string }> = {
@@ -50,18 +40,28 @@ const ENTRY_TYPE_META: Record<string, { label: string; colour: string; bg: strin
 };
 
 export const ReceiptPreviewModal: React.FC<Props> = ({
-  open, entry, customer, onClose,
+  open, entry, customer, onClose, onUseAlternatePhone,
 }) => {
-  const [printed,     setPrinted]     = useState(false);
-  const [showWAModal, setShowWAModal] = useState(false);
-  const [sharing,     setSharing]     = useState(false);
-
-  const isMobile = isMobileDevice();
+  const [printed,           setPrinted]           = useState(false);
+  const [showWAModal,       setShowWAModal]       = useState(false);
+  const [useAlternatePhone, setUseAlternatePhone] = useState(false);
 
   // Reset state whenever a new entry arrives
   useEffect(() => {
-    if (open) { setPrinted(false); setShowWAModal(false); setSharing(false); }
+    if (open) {
+      setPrinted(false);
+      setShowWAModal(false);
+      setUseAlternatePhone(false);
+      onUseAlternatePhone?.(false);
+    }
   }, [open, entry?.id]);
+
+  const hasAlternate = !!customer?.alternateMobile?.trim();
+
+  // Effective customer with chosen phone number for WhatsApp sharing
+  const effectiveCustomer = useAlternatePhone && hasAlternate && customer
+    ? { ...customer, mobile: customer.alternateMobile || customer.mobile }
+    : customer;
 
   // Close on Escape
   useEffect(() => {
@@ -83,26 +83,9 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
     setPrinted(true);
   };
 
-  /**
-   * WhatsApp button click handler.
-   *
-   * MOBILE:   Calls shareMobile() — downloads PDF then opens WhatsApp app via wa.me.
-   *           No modal needed; the Windows automation doesn't exist on mobile.
-   *
-   * DESKTOP:  Opens the existing 3-step WhatsAppSendModal (fitshare:// automation).
-   */
-  const handleWhatsApp = async () => {
-    if (isMobile) {
-      setSharing(true);
-      try {
-        await shareMobile(entry, customer);
-      } finally {
-        // Keep the button disabled briefly while the redirect fires
-        setTimeout(() => setSharing(false), 2500);
-      }
-    } else {
-      setShowWAModal(true);
-    }
+  // Open the 3-step WhatsAppSendModal with the effective customer (chosen phone)
+  const handleWhatsApp = () => {
+    setShowWAModal(true);
   };
 
   return (
@@ -150,21 +133,6 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
             <span className="text-xs font-semibold text-blue-800">{entry.billNumber}</span>
           </div>
 
-          {/* Mobile-specific info banner */}
-          {isMobile && (
-            <div className="flex items-start gap-3 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
-              <Smartphone size={16} className="shrink-0 mt-0.5 text-green-600" />
-              <div>
-                <p className="text-sm font-semibold text-green-800">Mobile WhatsApp Sharing</p>
-                <p className="text-xs text-green-700 mt-0.5">
-                  Tap <strong>Share via WhatsApp</strong> below. The PDF will download to your
-                  device first, then WhatsApp will open with the message ready.
-                  Attach the saved PDF using the 📎 icon in the chat.
-                </p>
-              </div>
-            </div>
-          )}
-
           {/* Customer card */}
           <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4 space-y-2">
             <p className="text-xs font-bold text-blue-700 uppercase tracking-wide mb-2 flex items-center gap-1.5">
@@ -181,13 +149,14 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
               </div>
               <div>
                 <p className="text-xs text-gray-500">Mobile</p>
-                <div className="space-y-0.5">
-                  <p className="font-medium text-gray-700">{customer.mobile || '—'}</p>
-                  {customer.alternateMobile && (
-                    <p className="text-[10px] text-gray-400">Alt: {customer.alternateMobile}</p>
-                  )}
-                </div>
+                <p className="font-medium text-gray-700">{customer.mobile || '—'}</p>
               </div>
+              {customer.alternateMobile && (
+                <div>
+                  <p className="text-xs text-gray-500">Alternate Mobile</p>
+                  <p className="font-medium text-gray-700">{customer.alternateMobile || '—'}</p>
+                </div>
+              )}
               <div>
                 <p className="text-xs text-gray-500">Date</p>
                 <p className="font-medium text-gray-700 flex items-center gap-1">
@@ -196,6 +165,24 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
               </div>
             </div>
           </div>
+
+          {/* Phone number toggle for WhatsApp sharing */}
+          {hasAlternate && (
+            <label className="flex items-center gap-3 cursor-pointer select-none rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+              <input
+                type="checkbox"
+                checked={useAlternatePhone}
+                onChange={(e) => {
+                  setUseAlternatePhone(e.target.checked);
+                  onUseAlternatePhone?.(e.target.checked);
+                }}
+                className="w-4 h-4 accent-green-600"
+              />
+              <span className="text-sm text-gray-700">
+                Use alternate contact number (<span className="font-semibold">{customer.alternateMobile}</span>) for WhatsApp sharing
+              </span>
+            </label>
+          )}
 
           {/* Box movement summary */}
           <div className="rounded-xl border border-gray-100 overflow-hidden">
@@ -211,6 +198,7 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
             </div>
 
             <div className="divide-y divide-gray-50">
+              {/* Already sent */}
               <div className="flex items-center justify-between px-4 py-2.5 bg-white">
                 <span className="flex items-center gap-2 text-sm text-gray-600">
                   <Hash size={13} className="text-gray-400" />
@@ -219,6 +207,7 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
                 <span className="text-sm text-gray-700 font-semibold">{entry.totalBoxesSent}</span>
               </div>
 
+              {/* Current qty */}
               <div className="flex items-center justify-between px-4 py-2.5 bg-white">
                 <span className="flex items-center gap-2 text-sm text-gray-600">
                   <ArrowUpRight size={13} className="text-blue-500" />
@@ -227,6 +216,7 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
                 <span className="text-sm text-blue-700 font-semibold">{entry.currentQuantity}</span>
               </div>
 
+              {/* TOTAL */}
               <div className="flex items-center justify-between px-4 py-3 bg-blue-900">
                 <span className="flex items-center gap-2 text-sm text-blue-100 font-bold">
                   <Package size={13} className="text-blue-300" />
@@ -235,6 +225,7 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
                 <span className="text-lg font-extrabold text-white">{totalBoxes}</span>
               </div>
 
+              {/* Returned */}
               <div className="flex items-center justify-between px-4 py-2.5 bg-white">
                 <span className="flex items-center gap-2 text-sm text-gray-600">
                   <ArrowDownLeft size={13} className="text-green-500" />
@@ -243,6 +234,7 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
                 <span className="text-sm text-green-700 font-semibold">{entry.boxesReturned}</span>
               </div>
 
+              {/* Balance */}
               <div className={`flex items-center justify-between px-4 py-3 ${
                 entry.balanceBoxes > 0 ? 'bg-amber-50' : 'bg-green-50'
               }`}>
@@ -329,7 +321,7 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
 
           <div className="flex flex-col sm:flex-row gap-3">
 
-            {/* Download PDF — same on all devices */}
+            {/* Print / Save as PDF */}
             <button
               onClick={handlePrint}
               className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-sm ${
@@ -344,35 +336,19 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
               }
             </button>
 
-            {/* WhatsApp — label and behaviour adapts to device */}
+            {/* WhatsApp — opens 3-step guided modal */}
             <button
               onClick={handleWhatsApp}
-              disabled={sharing}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-sm bg-green-600 text-white hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed"
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-sm bg-green-600 text-white hover:bg-green-700"
             >
-              {sharing ? (
-                <>
-                  <MessageCircle size={16} className="animate-pulse" />
-                  Opening WhatsApp…
-                </>
-              ) : isMobile ? (
-                <>
-                  <MessageCircle size={16} />
-                  Share via WhatsApp
-                </>
-              ) : (
-                <>
-                  <MessageCircle size={16} />
-                  Automated Share via WhatsApp
-                </>
-              )}
+              <MessageCircle size={16} /> Automated Share via WhatsApp
             </button>
           </div>
 
           {/* No-phone warning */}
-          {!customer.mobile?.trim() && (
+          {!effectiveCustomer?.mobile?.trim() && (
             <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-center">
-              ⚠️ No mobile number saved for this customer — WhatsApp sharing requires a phone number.
+              No mobile number {useAlternatePhone ? '(alternate)' : ''} saved for this customer — WhatsApp sharing requires a phone number.
               <br />Please update the customer record first.
             </p>
           )}
@@ -387,11 +363,11 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* 3-step WhatsApp guided modal — desktop only */}
+      {/* 3-step WhatsApp send modal — rendered inside the same z-layer */}
       <WhatsAppSendModal
         open={showWAModal}
         entry={entry}
-        customer={customer}
+        customer={effectiveCustomer}
         onClose={() => setShowWAModal(false)}
       />
     </div>

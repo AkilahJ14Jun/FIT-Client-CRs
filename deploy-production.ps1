@@ -5,17 +5,21 @@
 
 .DESCRIPTION
     This script will:
-      1. Verify prerequisites (Node.js, Docker, NSSM, Nginx)
+      1. Verify prerequisites (Node.js, Docker, PM2)
       2. Start MySQL via Docker Compose
       3. Install & compile the backend
       4. Build the frontend (Vite production build)
-      5. Generate the Nginx config
-      6. Register backend + Nginx as Windows Services (NSSM)
+      5. Start backend via PM2 (or NSSM with -UseNSSM)
+      6. Configure Nginx reverse proxy (if installed)
       7. Register the WhatsApp fitshare:// protocol (optional)
       8. Configure Windows Firewall rules
       9. Verify the deployment
 
     Run this script from the project root as Administrator!
+
+.PARAMETER UseNSSM
+    Use NSSM (Windows Services) instead of PM2 for process management.
+    Recommended only for headless servers where no user is logged in.
 
 .NOTES
     See DEPLOYMENT.md for the full manual walkthrough.
@@ -25,6 +29,7 @@
 param(
     [string]$InstallRoot = "C:\FIT",
     [string]$NginxRoot   = "C:\nginx",
+    [switch]$UseNSSM,
     [switch]$SkipWhatsApp,
     [switch]$SkipFirewall,
     [switch]$SkipHTTPS,
@@ -69,13 +74,24 @@ if (Test-Command "docker") {
     else { Write-Fail "Docker is installed but not running — start Docker Desktop first"; $prereqOK = $false }
 } else { Write-Fail "Docker not found in PATH"; $prereqOK = $false }
 
-# NSSM
-if (Test-Command "nssm") { Write-OK "NSSM available" }
-else { Write-Fail "NSSM not found in PATH — download from https://nssm.cc"; $prereqOK = $false }
+# PM2 or NSSM
+if ($UseNSSM) {
+    if (Test-Command "nssm") { Write-OK "NSSM available (headless mode)" }
+    else { Write-Fail "NSSM not found in PATH — download from https://nssm.cc"; $prereqOK = $false }
+} else {
+    if (Test-Command "pm2") { Write-OK "PM2 $(pm2 --version 2>&1)" }
+    else {
+        Write-Warn "PM2 not found — installing globally ..."
+        npm install -g pm2 pm2-windows-startup 2>&1 | Out-Null
+        if (Test-Command "pm2") { Write-OK "PM2 installed successfully" }
+        else { Write-Fail "Failed to install PM2"; $prereqOK = $false }
+    }
+}
 
-# Nginx
-if (Test-Path "$NginxRoot\nginx.exe") { Write-OK "Nginx found at $NginxRoot" }
-else { Write-Warn "Nginx not found at $NginxRoot — will skip Nginx setup (serve frontend manually)" }
+# Nginx (optional)
+$useNginx = Test-Path "$NginxRoot\nginx.exe"
+if ($useNginx) { Write-OK "Nginx found at $NginxRoot (will configure as reverse proxy)" }
+else { Write-OK "Nginx not found — backend will serve frontend directly on port 3001" }
 
 if (-not $prereqOK) {
     Write-Fail "One or more prerequisites missing. Fix the above and retry."
@@ -184,47 +200,73 @@ if ($LASTEXITCODE -ne 0) {
 Write-OK "Frontend built to dist\"
 Pop-Location
 
-# ─── Step 5: Register Backend as Windows Service ────────────
-Write-Step "Step 5: Register Backend as Windows Service (NSSM)"
+# ─── Step 5: Start Backend ───────────────────────────────────
+if ($UseNSSM) {
+    Write-Step "Step 5: Register Backend as Windows Service (NSSM)"
 
-$svcName = "fit-backend"
-$svcStatus = nssm status $svcName 2>&1
+    $svcName = "fit-backend"
+    $svcStatus = nssm status $svcName 2>&1
 
-if ($svcStatus -match "SERVICE_RUNNING") {
-    Write-Host "  Stopping existing $svcName service ..."
-    nssm stop $svcName 2>&1 | Out-Null
-}
-if ($svcStatus -notmatch "not.*exist" -and $svcStatus -notmatch "Can't open") {
-    Write-Host "  Removing existing $svcName service ..."
-    nssm remove $svcName confirm 2>&1 | Out-Null
-}
+    if ($svcStatus -match "SERVICE_RUNNING") {
+        Write-Host "  Stopping existing $svcName service ..."
+        nssm stop $svcName 2>&1 | Out-Null
+    }
+    if ($svcStatus -notmatch "not.*exist" -and $svcStatus -notmatch "Can't open") {
+        Write-Host "  Removing existing $svcName service ..."
+        nssm remove $svcName confirm 2>&1 | Out-Null
+    }
 
-$nodePath = (Get-Command node).Source
-nssm install $svcName $nodePath "dist\index.js" 2>&1 | Out-Null
-nssm set $svcName AppDirectory "$InstallRoot\server" 2>&1 | Out-Null
-nssm set $svcName DisplayName "FIT Backend API" 2>&1 | Out-Null
-nssm set $svcName Description "FIT Application Express.js Backend Server" 2>&1 | Out-Null
-nssm set $svcName AppStdout "$InstallRoot\server\logs\stdout.log" 2>&1 | Out-Null
-nssm set $svcName AppStderr "$InstallRoot\server\logs\stderr.log" 2>&1 | Out-Null
-nssm set $svcName AppStdoutCreationDisposition 4 2>&1 | Out-Null  # Append
-nssm set $svcName AppStderrCreationDisposition 4 2>&1 | Out-Null  # Append
-nssm set $svcName Start SERVICE_AUTO_START 2>&1 | Out-Null
+    $nodePath = (Get-Command node).Source
+    nssm install $svcName $nodePath "dist\index.js" 2>&1 | Out-Null
+    nssm set $svcName AppDirectory "$InstallRoot\server" 2>&1 | Out-Null
+    nssm set $svcName DisplayName "FIT Backend API" 2>&1 | Out-Null
+    nssm set $svcName Description "FIT Application Express.js Backend Server" 2>&1 | Out-Null
+    nssm set $svcName AppStdout "$InstallRoot\server\logs\stdout.log" 2>&1 | Out-Null
+    nssm set $svcName AppStderr "$InstallRoot\server\logs\stderr.log" 2>&1 | Out-Null
+    nssm set $svcName AppStdoutCreationDisposition 4 2>&1 | Out-Null  # Append
+    nssm set $svcName AppStderrCreationDisposition 4 2>&1 | Out-Null  # Append
+    nssm set $svcName Start SERVICE_AUTO_START 2>&1 | Out-Null
 
-nssm start $svcName 2>&1 | Out-Null
-Start-Sleep -Seconds 3
+    nssm start $svcName 2>&1 | Out-Null
+    Start-Sleep -Seconds 3
 
-$status = nssm status $svcName 2>&1
-if ($status -match "SERVICE_RUNNING") {
-    Write-OK "Backend service '$svcName' is running"
+    $status = nssm status $svcName 2>&1
+    if ($status -match "SERVICE_RUNNING") {
+        Write-OK "Backend service '$svcName' is running (NSSM)"
+    } else {
+        Write-Fail "Backend service failed to start — check logs at $InstallRoot\server\logs\"
+        Write-Host "  Status: $status"
+    }
 } else {
-    Write-Fail "Backend service failed to start — check logs at $InstallRoot\server\logs\"
-    Write-Host "  Status: $status"
+    Write-Step "Step 5: Start Backend with PM2"
+
+    # Stop existing PM2 process if running
+    pm2 delete fit-backend 2>&1 | Out-Null
+
+    Push-Location "$InstallRoot\server"
+    pm2 start dist/index.js --name fit-backend 2>&1 | Out-Null
+    Pop-Location
+
+    Start-Sleep -Seconds 3
+
+    $pm2Status = pm2 jlist 2>&1 | ConvertFrom-Json
+    $backendProc = $pm2Status | Where-Object { $_.name -eq "fit-backend" }
+    if ($backendProc -and $backendProc.pm2_env.status -eq "online") {
+        Write-OK "Backend 'fit-backend' is running (PM2)"
+    } else {
+        Write-Warn "Backend may not be running — check with 'pm2 status'"
+    }
+
+    # Save and configure auto-start
+    pm2 save 2>&1 | Out-Null
+    pm2-startup install 2>&1 | Out-Null
+    Write-OK "PM2 process saved and auto-start configured"
 }
 
-# ─── Step 6: Configure & Register Nginx ─────────────────────
-Write-Step "Step 6: Configure Nginx as Reverse Proxy"
+# ─── Step 6: Configure & Register Nginx (if installed) ─────
+if ($useNginx) {
+    Write-Step "Step 6: Configure Nginx as Reverse Proxy"
 
-if (Test-Path "$NginxRoot\nginx.exe") {
     # Stop any running nginx
     $nginxProc = Get-Process nginx -ErrorAction SilentlyContinue
     if ($nginxProc) {
@@ -234,8 +276,7 @@ if (Test-Path "$NginxRoot\nginx.exe") {
         Pop-Location
     }
 
-    # Write production nginx.conf
-    $distPath = "$InstallRoot\dist" -replace '\\','/'
+    # Write production nginx.conf — simple reverse proxy to Express
     $nginxConf = @"
 worker_processes  1;
 
@@ -263,39 +304,20 @@ http {
         listen       80;
         server_name  localhost;
 
-        # Frontend static files
+        # Proxy everything to Express (serves both API + frontend)
         location / {
-            root   $distPath;
-            index  index.html;
-            try_files `$uri `$uri/ /index.html;
-        }
-
-        # Proxy API requests to backend
-        location /api {
             proxy_pass          http://localhost:3001;
             proxy_http_version  1.1;
             proxy_set_header    Host `$host;
             proxy_set_header    X-Real-IP `$remote_addr;
             proxy_set_header    X-Forwarded-For `$proxy_add_x_forwarded_for;
             proxy_set_header    X-Forwarded-Proto `$scheme;
-
-            # Timeouts for long-running requests
-            proxy_connect_timeout 60s;
-            proxy_send_timeout    60s;
-            proxy_read_timeout    60s;
         }
 
         # Enable gzip compression
         gzip on;
         gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
         gzip_min_length 256;
-
-        # Cache static assets
-        location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
-            root   $distPath;
-            expires 30d;
-            add_header Cache-Control "public, immutable";
-        }
     }
 }
 "@
@@ -312,24 +334,31 @@ http {
     }
     Pop-Location
 
-    # Register Nginx as NSSM service
-    $nginxSvc = "fit-nginx"
-    $nginxSvcStatus = nssm status $nginxSvc 2>&1
-    if ($nginxSvcStatus -notmatch "not.*exist" -and $nginxSvcStatus -notmatch "Can't open") {
-        nssm stop $nginxSvc 2>&1 | Out-Null
-        nssm remove $nginxSvc confirm 2>&1 | Out-Null
+    # Start Nginx via PM2 or NSSM
+    if ($UseNSSM) {
+        $nginxSvc = "fit-nginx"
+        $nginxSvcStatus = nssm status $nginxSvc 2>&1
+        if ($nginxSvcStatus -notmatch "not.*exist" -and $nginxSvcStatus -notmatch "Can't open") {
+            nssm stop $nginxSvc 2>&1 | Out-Null
+            nssm remove $nginxSvc confirm 2>&1 | Out-Null
+        }
+        nssm install $nginxSvc "$NginxRoot\nginx.exe" 2>&1 | Out-Null
+        nssm set $nginxSvc AppDirectory $NginxRoot 2>&1 | Out-Null
+        nssm set $nginxSvc DisplayName "FIT Nginx Reverse Proxy" 2>&1 | Out-Null
+        nssm set $nginxSvc Description "Nginx reverse proxy for FIT application" 2>&1 | Out-Null
+        nssm set $nginxSvc Start SERVICE_AUTO_START 2>&1 | Out-Null
+        nssm start $nginxSvc 2>&1 | Out-Null
+        Start-Sleep -Seconds 2
+        Write-OK "Nginx registered and started as NSSM service 'fit-nginx'"
+    } else {
+        pm2 delete fit-nginx 2>&1 | Out-Null
+        pm2 start "$NginxRoot\nginx.exe" --name fit-nginx 2>&1 | Out-Null
+        pm2 save 2>&1 | Out-Null
+        Start-Sleep -Seconds 2
+        Write-OK "Nginx started and saved via PM2 as 'fit-nginx'"
     }
-    nssm install $nginxSvc "$NginxRoot\nginx.exe" 2>&1 | Out-Null
-    nssm set $nginxSvc AppDirectory $NginxRoot 2>&1 | Out-Null
-    nssm set $nginxSvc DisplayName "FIT Nginx Reverse Proxy" 2>&1 | Out-Null
-    nssm set $nginxSvc Description "Nginx reverse proxy for FIT application" 2>&1 | Out-Null
-    nssm set $nginxSvc Start SERVICE_AUTO_START 2>&1 | Out-Null
-    nssm start $nginxSvc 2>&1 | Out-Null
-    Start-Sleep -Seconds 2
-    Write-OK "Nginx registered and started as service '$nginxSvc'"
 } else {
-    Write-Warn "Nginx not found at $NginxRoot — skipping Nginx setup"
-    Write-Warn "You'll need to configure a reverse proxy manually or access the backend directly on :3001"
+    Write-Host "`n  Step 6: Skipped (no Nginx — backend serves frontend on :3001)" -ForegroundColor DarkGray
 }
 
 # ─── Step 7: Register WhatsApp Protocol ─────────────────────
@@ -369,13 +398,18 @@ if (-not $SkipFirewall) {
     Write-Step "Step 8: Configure Windows Firewall"
 
     # Remove old rules if they exist, then create new ones
-    @("FIT Nginx (HTTP)", "FIT Nginx (HTTPS)") | ForEach-Object {
+    @("FIT Nginx (HTTP)", "FIT Nginx (HTTPS)", "FIT Backend (HTTP)") | ForEach-Object {
         Remove-NetFirewallRule -DisplayName $_ -ErrorAction SilentlyContinue 2>&1 | Out-Null
     }
 
-    New-NetFirewallRule -DisplayName "FIT Nginx (HTTP)"  -Direction Inbound -Protocol TCP -LocalPort 80  -Action Allow | Out-Null
-    New-NetFirewallRule -DisplayName "FIT Nginx (HTTPS)" -Direction Inbound -Protocol TCP -LocalPort 443 -Action Allow | Out-Null
-    Write-OK "Firewall rules added for ports 80, 443"
+    if ($useNginx) {
+        New-NetFirewallRule -DisplayName "FIT Nginx (HTTP)"  -Direction Inbound -Protocol TCP -LocalPort 80  -Action Allow | Out-Null
+        New-NetFirewallRule -DisplayName "FIT Nginx (HTTPS)" -Direction Inbound -Protocol TCP -LocalPort 443 -Action Allow | Out-Null
+        Write-OK "Firewall rules added for ports 80, 443 (Nginx)"
+    } else {
+        New-NetFirewallRule -DisplayName "FIT Backend (HTTP)" -Direction Inbound -Protocol TCP -LocalPort 3001 -Action Allow | Out-Null
+        Write-OK "Firewall rule added for port 3001 (Express)"
+    }
 } else {
     Write-Host "`n  Skipping firewall configuration (-SkipFirewall)" -ForegroundColor DarkGray
 }
@@ -406,16 +440,15 @@ try {
     Write-Fail "Backend API not responding on :3001 — check service logs"
 }
 
-# Check Nginx frontend
-if (Test-Path "$NginxRoot\nginx.exe") {
-    try {
-        $frontResp = Invoke-WebRequest -Uri "http://localhost" -TimeoutSec 10 -UseBasicParsing
-        if ($frontResp.StatusCode -eq 200) {
-            Write-OK "Frontend accessible at http://localhost"
-        }
-    } catch {
-        Write-Warn "Frontend not responding at http://localhost — Nginx may need a moment"
+# Check frontend (via Express or Nginx)
+$frontendUrl = if ($useNginx) { "http://localhost" } else { "http://localhost:3001" }
+try {
+    $frontResp = Invoke-WebRequest -Uri $frontendUrl -TimeoutSec 10 -UseBasicParsing
+    if ($frontResp.StatusCode -eq 200) {
+        Write-OK "Frontend accessible at $frontendUrl"
     }
+} catch {
+    Write-Warn "Frontend not responding at $frontendUrl — backend may need a moment"
 }
 
 # Check Docker
@@ -427,13 +460,19 @@ if ($dockerContainers -match "fit_mysql_db") {
 }
 
 # ─── Summary ────────────────────────────────────────────────
+$procMgr = if ($UseNSSM) { "NSSM (Windows Services)" } else { "PM2" }
+$appUrl  = if ($useNginx) { "http://localhost" } else { "http://localhost:3001" }
 Write-Host "`n" -NoNewline
 Write-Host "╔═══════════════════════════════════════════════════════╗" -ForegroundColor Green
 Write-Host "║      FIT Production Deployment Complete!              ║" -ForegroundColor Green
 Write-Host "╠═══════════════════════════════════════════════════════╣" -ForegroundColor Green
-Write-Host "║  Frontend:  http://localhost                          ║" -ForegroundColor Green
+Write-Host "║  App:       $($appUrl.PadRight(42))║" -ForegroundColor Green
 Write-Host "║  API:       http://localhost:3001/api/settings        ║" -ForegroundColor Green
 Write-Host "║  MySQL:     localhost:3308                            ║" -ForegroundColor Green
+Write-Host "║  Process:   $($procMgr.PadRight(40))║" -ForegroundColor Green
+if ($useNginx) {
+    Write-Host "║  Nginx:     http://localhost (port 80)                ║" -ForegroundColor Green
+}
 Write-Host "║                                                       ║" -ForegroundColor Green
 Write-Host "║  Default Logins:                                      ║" -ForegroundColor Green
 Write-Host "║    System Admin / Clasic@104                          ║" -ForegroundColor Green
@@ -441,4 +480,12 @@ Write-Host "║    Admin / AS@traders                                 ║" -Fore
 Write-Host "║                                                       ║" -ForegroundColor Green
 Write-Host "║  ⚠ CHANGE DEFAULT PASSWORDS ON FIRST LOGIN!          ║" -ForegroundColor Yellow
 Write-Host "╚═══════════════════════════════════════════════════════╝" -ForegroundColor Green
+if (-not $UseNSSM) {
+    Write-Host ""
+    Write-Host "  Quick PM2 commands:" -ForegroundColor DarkGray
+    Write-Host "    pm2 status          — view all processes" -ForegroundColor DarkGray
+    Write-Host "    pm2 logs            — live log stream" -ForegroundColor DarkGray
+    Write-Host "    pm2 monit           — monitoring dashboard" -ForegroundColor DarkGray
+    Write-Host "    pm2 restart all     — restart everything" -ForegroundColor DarkGray
+}
 Write-Host ""

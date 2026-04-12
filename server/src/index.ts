@@ -1,5 +1,7 @@
 import express from "express";
 import cors from "cors";
+import path from "path";
+import fs from "fs";
 import { AppDataSource } from "./data-source";
 import { Customer } from "./entity/Customer";
 import { InventorySource } from "./entity/InventorySource";
@@ -359,6 +361,21 @@ app.delete("/api/users/:id", async (req, res) => {
   await logAudit("DELETE", "User", user.id, `Deleted user: ${user.username}`);
   res.json({ success: true });
 });
+
+// ─── Serve Frontend (Production) ──────────────────────────
+// In production, serve the Vite-built frontend directly from Express.
+// This eliminates the need for Nginx on single-machine deployments.
+const frontendDist = path.resolve(__dirname, "../../dist");
+if (fs.existsSync(frontendDist)) {
+  console.log(`[Static] Serving frontend from ${frontendDist}`);
+  app.use(express.static(frontendDist));
+  // SPA catch-all: any non-API route returns index.html
+  app.get("*", (req, res) => {
+    if (!req.path.startsWith("/api")) {
+      res.sendFile(path.join(frontendDist, "index.html"));
+    }
+  });
+}
 
 AppDataSource.initialize()
   .then(async () => {

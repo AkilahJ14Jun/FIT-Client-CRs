@@ -33,11 +33,14 @@ export const WhatsAppSendModal: React.FC<Props> = ({
   open, entry, customer, onClose,
 }) => {
   const [payload, setPayload] = useState<WhatsAppPayload | null>(null);
+  const [altPhone, setAltPhone] = useState<string>('');
 
   // Reset state whenever a new entry/customer arrives
   useEffect(() => {
     if (open && entry && customer) {
-      setPayload(buildWhatsAppPayload(entry, customer));
+      const p = buildWhatsAppPayload(entry, customer);
+      setPayload(p);
+      setAltPhone(p.phone || '');
     }
   }, [open, entry?.id, customer?.id]);
 
@@ -50,11 +53,12 @@ export const WhatsAppSendModal: React.FC<Props> = ({
 
   if (!open || !entry || !customer || !payload) return null;
 
-  const hasPhone = !!customer.mobile?.trim();
+  const hasPhone = !!altPhone?.trim();
   const filename = receiptFilename(entry);
 
   const handleLaunchAutomation = () => {
-    triggerWhatsAppAutomation(payload, entry, customer);
+    const finalPayload = { ...payload, phone: altPhone };
+    triggerWhatsAppAutomation(finalPayload, entry, customer);
   };
 
   return (
@@ -113,9 +117,44 @@ export const WhatsAppSendModal: React.FC<Props> = ({
               <span className="text-gray-500 flex items-center gap-1.5"><User size={14} /> Customer</span>
               <span className="font-semibold text-gray-800">{customer.customerName}</span>
             </div>
-            <div className="flex justify-between items-center text-sm">
-              <span className="text-gray-500 flex items-center gap-1.5"><Phone size={14} /> Mobile</span>
-              <span className="font-semibold text-green-700">{payload.phone}</span>
+            <div className="flex justify-between items-start text-sm">
+              <span className="text-gray-500 mt-1 flex items-center gap-1.5"><Phone size={14} /> Target No.</span>
+              <div className="flex flex-col items-end gap-2">
+                <input
+                  type="text"
+                  value={altPhone}
+                  onChange={(e) => setAltPhone(e.target.value)}
+                  placeholder="e.g. +919876543210"
+                  className="text-right font-semibold text-green-700 bg-transparent border-b border-green-300 focus:outline-none focus:border-green-600 w-40"
+                />
+                
+                {payload && payload.altPhone && (
+                  <div className="flex gap-1 bg-gray-200/50 p-1 rounded-lg border border-gray-200">
+                    <button
+                      type="button"
+                      onClick={() => setAltPhone(payload.phone)}
+                      className={`text-[10px] px-2.5 py-1 rounded-md transition-all uppercase tracking-wider font-bold ${
+                        altPhone === payload.phone 
+                        ? 'bg-white text-blue-700 shadow-sm'
+                        : 'text-gray-400 hover:text-gray-600'
+                      }`}
+                    >
+                      Primary
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAltPhone(payload.altPhone || '')}
+                      className={`text-[10px] px-2.5 py-1 rounded-md transition-all uppercase tracking-wider font-bold ${
+                        altPhone === payload.altPhone 
+                        ? 'bg-white text-blue-700 shadow-sm'
+                        : 'text-gray-400 hover:text-gray-600'
+                      }`}
+                    >
+                      Alternate
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
             <div className="flex justify-between items-center text-sm border-t border-gray-200 pt-3">
               <span className="text-gray-500 flex items-center gap-1.5"><FileText size={14} /> PDF File</span>

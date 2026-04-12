@@ -46,9 +46,8 @@ export const Architecture: React.FC = () => {
               <Globe size={20} className="text-blue-700" /> FIT – System Architecture Overview
             </h2>
             <p className="text-sm text-gray-600 mb-6">
-              FIT (Fish Inventory Tracking) is a single-page progressive web application (PWA) built with 
-              React 19 + Vite 7 + Tailwind CSS 4. It operates entirely in the browser using localStorage for 
-              data persistence, requiring zero backend infrastructure for the current release.
+              FIT (Fish Inventory Tracking) is a full-stack web application built with a React 19 + Vite frontend, 
+              powered by a Node.js/Express API and a robust MySQL database for data persistence using TypeORM.
             </p>
 
             {/* Architecture diagram */}
@@ -74,7 +73,7 @@ export const Architecture: React.FC = () => {
               <div className="flex justify-center mb-1">
                 <ArrowDown size={18} className="text-blue-400" />
               </div>
-              <div className="text-center text-xs text-blue-300 mb-3">HTTPS / Static Hosting</div>
+              <div className="text-center text-xs text-blue-300 mb-3">Network Request (API calls)</div>
               <div className="flex justify-center mb-1">
                 <ArrowDown size={18} className="text-blue-400" />
               </div>
@@ -111,13 +110,13 @@ export const Architecture: React.FC = () => {
 
               {/* Data Layer */}
               <div className="bg-white/10 rounded-xl p-4 border border-white/20">
-                <p className="text-xs text-blue-300 uppercase tracking-widest mb-3 text-center">Data & Utility Layer</p>
+                <p className="text-xs text-blue-300 uppercase tracking-widest mb-3 text-center">Backend & Data Layer</p>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {[
-                    { label: 'localStorage', sub: 'Data Store' },
-                    { label: 'jsPDF', sub: 'PDF Generation' },
-                    { label: 'date-fns', sub: 'Date Utils' },
-                    { label: 'Audit Log', sub: 'Change Tracking' },
+                    { label: 'Express.js', sub: 'REST API' },
+                    { label: 'TypeORM', sub: 'Data Access' },
+                    { label: 'MySQL (Docker)', sub: 'Database' },
+                    { label: 'PM2', sub: 'Process Manager' },
                   ].map(({ label, sub }) => (
                     <div key={label} className="bg-emerald-500/20 rounded-lg p-2 text-center">
                       <p className="text-xs font-semibold">{label}</p>
@@ -132,12 +131,12 @@ export const Architecture: React.FC = () => {
           {/* Key characteristics */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {[
-              { icon: <Wifi size={20} />, title: 'Works Offline', desc: 'All data is stored locally. No internet needed after initial load.', color: 'bg-emerald-50 text-emerald-700' },
-              { icon: <Zap size={20} />, title: 'Instant Performance', desc: 'No API calls. All operations complete in milliseconds.', color: 'bg-yellow-50 text-yellow-700' },
-              { icon: <Lock size={20} />, title: 'Data Privacy', desc: 'Data never leaves the device. Complete privacy by design.', color: 'bg-blue-50 text-blue-800' },
-              { icon: <Smartphone size={20} />, title: 'Mobile Responsive', desc: 'Fully usable on mobile phones and tablets.', color: 'bg-purple-50 text-purple-700' },
-              { icon: <Package size={20} />, title: 'Modular Design', desc: 'Each page is an independent module. Easy to extend.', color: 'bg-orange-50 text-orange-700' },
-              { icon: <Shield size={20} />, title: 'Audit Trail', desc: 'Every create, update and delete is logged with timestamps.', color: 'bg-red-50 text-red-700' },
+              { icon: <Wifi size={20} />, title: 'Multi-User Access', desc: 'Centralized database allows real-time access from multiple devices simultaneously.', color: 'bg-emerald-50 text-emerald-700' },
+              { icon: <Zap size={20} />, title: 'High Performance', desc: 'Optimized API and indexes ensure rapid data retrieval for large datasets.', color: 'bg-yellow-50 text-yellow-700' },
+              { icon: <Database size={20} />, title: 'Data Integrity', desc: 'Relational MySQL database ensures referential integrity across resources.', color: 'bg-blue-50 text-blue-800' },
+              { icon: <Smartphone size={20} />, title: 'Responsive Client', desc: 'React frontend fully usable on mobile phones and tablets seamlessly interacting with the API.', color: 'bg-purple-50 text-purple-700' },
+              { icon: <Shield size={20} />, title: 'Secure Authentication', desc: 'API endpoints protected by encrypted passwords and role-based access control.', color: 'bg-orange-50 text-orange-700' },
+              { icon: <Package size={20} />, title: 'Audit Trail', desc: 'Every data change is logged in a dedicated audit database table.', color: 'bg-red-50 text-red-700' },
             ].map(({ icon, title, desc, color }) => (
               <div key={title} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
                 <div className={`inline-flex rounded-xl p-2 mb-3 ${color}`}>{icon}</div>
@@ -245,29 +244,30 @@ export const Architecture: React.FC = () => {
               <Database size={20} className="text-blue-700" /> Data Architecture
             </h2>
             <p className="text-sm text-gray-600 mb-6">
-              Data is stored in browser localStorage as versioned JSON. Each collection has its own key. 
-              The schema is designed to be forward-compatible with a future SQLite / PostgreSQL backend.
+              Data is stored in a robust MySQL database managed via TypeORM in the Express backend. The application
+              leverages relational integrity, migrations, and active records to ensure stability and consistency.
             </p>
 
             {/* Storage Keys */}
             <div className="mb-6">
-              <h3 className="font-semibold text-gray-800 mb-3 text-sm">localStorage Collections</h3>
+              <h3 className="font-semibold text-gray-800 mb-3 text-sm">Main Database Tables (MySQL)</h3>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-blue-900 text-white text-xs">
-                      <th className="text-left px-4 py-2 rounded-tl-lg">Key</th>
-                      <th className="text-left px-4 py-2">Entity</th>
+                      <th className="text-left px-4 py-2 rounded-tl-lg">Table Name</th>
+                      <th className="text-left px-4 py-2">TypeORM Entity</th>
                       <th className="text-left px-4 py-2 rounded-tr-lg">Description</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {[
-                      { key: 'fit_customers_v2', entity: 'Customer[]', desc: 'Customer master — name, shop, mobile, email, address' },
-                      { key: 'fit_inventory_sources_v2', entity: 'InventorySource[]', desc: 'Box supply sources — harbour, contact, mobile' },
-                      { key: 'fit_box_entries_v2', entity: 'BoxEntry[]', desc: 'All box movements — dispatch, return, balance, external' },
-                      { key: 'fit_app_settings_v2', entity: 'AppSettings', desc: 'Company info, bill prefix, backup config' },
-                      { key: 'fit_audit_log_v2', entity: 'AuditLog[]', desc: 'Change tracking — action, entity, summary, timestamp' },
+                      { key: 'customer', entity: 'Customer', desc: 'Customer master — name, shop, mobile, email, address' },
+                      { key: 'inventory_source', entity: 'InventorySource', desc: 'Box supply sources — harbour, contact, mobile' },
+                      { key: 'box_entry', entity: 'BoxEntry', desc: 'All box movements — dispatch, return, balance, external' },
+                      { key: 'app_settings', entity: 'AppSettings', desc: 'Company info, bill prefix, backup config' },
+                      { key: 'audit_log', entity: 'AuditLog', desc: 'Change tracking — action, entity, summary, timestamp' },
+                      { key: 'user', entity: 'User', desc: 'Authentication and authorization credentials' },
                     ].map(({ key, entity, desc }) => (
                       <tr key={key} className="hover:bg-gray-50">
                         <td className="px-4 py-2"><code className="text-xs bg-blue-50 text-blue-800 px-2 py-0.5 rounded">{key}</code></td>
@@ -358,14 +358,13 @@ export const Architecture: React.FC = () => {
             <div className="space-y-4">
               {[
                 {
-                  title: 'Data Isolation',
+                  title: 'Database Security',
                   icon: <Lock size={18} />,
                   color: 'bg-blue-50 text-blue-800',
                   items: [
-                    'All data stored in browser localStorage — never transmitted to any server',
-                    'Data is isolated per browser origin (domain + protocol)',
-                    'Each device/browser maintains its own independent data store',
-                    'Backup/Restore allows controlled data transfer between devices',
+                    'Data is stored centrally in the MySQL database engine',
+                    'Database is not exposed to the public internet',
+                    'Connections between API and DB are securely managed inside Docker networks',
                   ],
                 },
                 {
@@ -373,10 +372,9 @@ export const Architecture: React.FC = () => {
                   icon: <Shield size={18} />,
                   color: 'bg-emerald-50 text-emerald-700',
                   items: [
-                    'Every CREATE, UPDATE, DELETE action is recorded in the audit log',
-                    'Audit entries include entity type, ID, summary text, and ISO timestamp',
-                    'Last 500 audit entries are retained automatically',
-                    'Audit log is visible in Settings → Audit Log tab',
+                    'Every CREATE, UPDATE, DELETE action is recorded over the API',
+                    'Audit entries reside in a dedicated audit_log table in MySQL',
+                    'Provides an immutable history of records modified by various system users',
                   ],
                 },
                 {
@@ -384,10 +382,9 @@ export const Architecture: React.FC = () => {
                   icon: <Globe size={18} />,
                   color: 'bg-orange-50 text-orange-700',
                   items: [
-                    'Serve via HTTPS only — configure SSL certificate on your host',
-                    'Add HTTP security headers: X-Frame-Options, CSP, HSTS',
-                    'The app is a static site — no server-side code to exploit',
-                    'WhatsApp sharing uses wa.me deep links (no API key required)',
+                    'Express.js backend serves via configurable ports with CORS policies',
+                    'Can be placed securely behind a reverse proxy (e.g., Nginx) or accessed directly via LAN',
+                    'Basic Authentication on login checks hashes via bcrypt',
                   ],
                 },
                 {
@@ -395,10 +392,9 @@ export const Architecture: React.FC = () => {
                   icon: <Database size={18} />,
                   color: 'bg-purple-50 text-purple-700',
                   items: [
-                    'Export JSON backup from Settings → Backup & Restore daily',
-                    'Store backups in Google Drive / OneDrive for off-device safety',
-                    'Import backup to restore or migrate to a new device/browser',
-                    'Backup merge is non-destructive — existing records are preserved',
+                    'Database exports via mysqldump scripts automated by cron/scheduled tasks',
+                    'Retains 30 days rolling backups natively on server',
+                    'Import functionality handles complete database restoration in minutes',
                   ],
                 },
               ].map(({ title, icon, color, items }) => (
@@ -437,12 +433,12 @@ const DeploymentGuide: React.FC = () => {
       icon: <Package size={18} />,
       content: (
         <div className="space-y-3 text-sm text-gray-700">
-          <p>Ensure the following are installed on your build machine:</p>
+          <p>Ensure the following are installed on your Windows deployment machine:</p>
           <div className="space-y-2">
             {[
-              { tool: 'Node.js', version: '≥ 18.x', check: 'node --version', install: 'Download from nodejs.org' },
-              { tool: 'npm', version: '≥ 9.x', check: 'npm --version', install: 'Bundled with Node.js' },
-              { tool: 'Git', version: 'any', check: 'git --version', install: 'Download from git-scm.com' },
+              { tool: 'Node.js', version: '≥ 20.x', check: 'node --version', install: 'Download from nodejs.org' },
+              { tool: 'Docker Desktop', version: 'any', check: 'docker --version', install: 'Download from docker.com' },
+              { tool: 'PM2', version: 'global', check: 'pm2 --version', install: 'npm install -g pm2 pm2-windows-startup' },
             ].map(({ tool, version, check, install }) => (
               <div key={tool} className="bg-gray-50 rounded-lg p-3 flex flex-wrap gap-4">
                 <div>
@@ -460,148 +456,57 @@ const DeploymentGuide: React.FC = () => {
       ),
     },
     {
-      title: 'Step 2 — Clone & Install',
-      icon: <FileText size={18} />,
-      content: (
-        <div className="space-y-3">
-          <p className="text-sm text-gray-700">Get the source code and install dependencies:</p>
-          <pre className="bg-gray-900 text-green-400 rounded-xl p-4 text-xs overflow-x-auto">{`# 1. Clone the repository
-git clone https://github.com/your-org/FIT.git
-cd FIT
-
-# 2. Install all dependencies
-npm install
-
-# 3. Verify dev server works (optional)
-npm run dev
-# → App opens at http://localhost:5173`}</pre>
-        </div>
-      ),
-    },
-    {
-      title: 'Step 3 — Build for Production',
-      icon: <Zap size={18} />,
-      content: (
-        <div className="space-y-3">
-          <p className="text-sm text-gray-700">Create the optimised production build:</p>
-          <pre className="bg-gray-900 text-green-400 rounded-xl p-4 text-xs overflow-x-auto">{`# Build the app
-npm run build
-
-# Output is in the /dist folder:
-# dist/
-# ├── index.html        ← Main HTML entry
-# ├── assets/
-# │   ├── index-[hash].js   ← All JS (bundled)
-# │   └── index-[hash].css  ← All CSS (bundled)
-
-# Preview the production build locally
-npm run preview
-# → http://localhost:4173`}</pre>
-          <div className="bg-blue-50 rounded-lg p-3 text-xs text-blue-800">
-            <strong>Note:</strong> The build output in <code>/dist</code> is a completely static site. 
-            It can be hosted on any static file server, CDN, or cloud storage.
-          </div>
-        </div>
-      ),
-    },
-    {
-      title: 'Step 4A — Deploy to Netlify (Recommended)',
-      icon: <Globe size={18} />,
-      content: (
-        <div className="space-y-3">
-          <p className="text-sm text-gray-700">Netlify provides free hosting with automatic HTTPS:</p>
-          <div className="space-y-2">
-            <div className="bg-gray-50 rounded-lg p-3">
-              <p className="text-xs font-semibold text-gray-700 mb-1">Option A — Netlify CLI (Recommended)</p>
-              <pre className="bg-gray-900 text-green-400 rounded p-3 text-xs overflow-x-auto">{`npm install -g netlify-cli
-netlify login
-netlify init
-netlify deploy --prod --dir=dist`}</pre>
-            </div>
-            <div className="bg-gray-50 rounded-lg p-3">
-              <p className="text-xs font-semibold text-gray-700 mb-1">Option B — Drag & Drop</p>
-              <p className="text-xs text-gray-600">
-                1. Go to <strong>app.netlify.com</strong> → Sites → Add new site<br />
-                2. Drag the <code>/dist</code> folder into the deploy area<br />
-                3. Your site is live with a free <code>.netlify.app</code> domain
-              </p>
-            </div>
-            <div className="bg-gray-50 rounded-lg p-3">
-              <p className="text-xs font-semibold text-gray-700 mb-1">SPA Redirect Config (REQUIRED)</p>
-              <p className="text-xs text-gray-600 mb-2">Create <code>public/_redirects</code> file with:</p>
-              <pre className="bg-gray-900 text-green-400 rounded p-2 text-xs">/*  /index.html  200</pre>
-            </div>
-          </div>
-        </div>
-      ),
-    },
-    {
-      title: 'Step 4B — Deploy to NGINX (Self-hosted)',
+      title: 'Step 2 — One-Click Automated Deployment',
       icon: <Server size={18} />,
       content: (
         <div className="space-y-3">
-          <p className="text-sm text-gray-700">For on-premise / local network deployment:</p>
-          <pre className="bg-gray-900 text-green-400 rounded-xl p-4 text-xs overflow-x-auto">{`# 1. Install NGINX on Ubuntu/Debian
-sudo apt update && sudo apt install nginx -y
+          <p className="text-sm text-gray-700">Use the included PowerShell script to install and configure everything automatically:</p>
+          <pre className="bg-gray-900 text-green-400 rounded-xl p-4 text-xs overflow-x-auto">{`# Open PowerShell as Administrator
 
-# 2. Copy dist to web root
-sudo mkdir -p /var/www/fit
-sudo cp -r dist/* /var/www/fit/
-
-# 3. Configure NGINX
-sudo nano /etc/nginx/sites-available/fit`}</pre>
-          <div className="bg-gray-50 rounded-lg p-3">
-            <p className="text-xs font-semibold text-gray-700 mb-2">NGINX Site Config</p>
-            <pre className="bg-gray-900 text-green-400 rounded p-3 text-xs overflow-x-auto">{`server {
-    listen 80;
-    server_name your-domain.com;
-    root /var/www/fit;
-    index index.html;
-
-    # SPA fallback — REQUIRED for React Router
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-
-    # Security headers
-    add_header X-Frame-Options DENY;
-    add_header X-Content-Type-Options nosniff;
-    add_header Referrer-Policy strict-origin-when-cross-origin;
-
-    # Cache static assets
-    location ~* \\.(js|css|png|jpg|svg|ico)$ {
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-    }
-}`}</pre>
+cd C:\\path\\to\\project
+.\\deploy-production.ps1`}</pre>
+          <div className="bg-blue-50 rounded-lg p-3 text-xs text-blue-800">
+            <strong>What this does:</strong>
+            <ul className="list-disc pl-4 mt-2 space-y-1">
+              <li>Starts the MySQL Docker container.</li>
+              <li>Installs dependencies and compiles the Node.js/Express backend.</li>
+              <li>Builds the React frontend.</li>
+              <li>Starts the backend API (which also serves the frontend) using PM2 so it runs in the background and starts on boot.</li>
+              <li>Opens port 3001 in the Windows Firewall for LAN network access.</li>
+            </ul>
           </div>
-          <pre className="bg-gray-900 text-green-400 rounded-xl p-4 text-xs overflow-x-auto">{`# 4. Enable the site
-sudo ln -s /etc/nginx/sites-available/fit /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl reload nginx
-
-# 5. (Optional) Add HTTPS with Let's Encrypt
-sudo apt install certbot python3-certbot-nginx
-sudo certbot --nginx -d your-domain.com`}</pre>
         </div>
       ),
     },
     {
-      title: 'Step 5 — Verify & Go Live',
+      title: 'Step 3 — Database Backups (Optional)',
+      icon: <Database size={18} />,
+      content: (
+        <div className="space-y-3">
+          <p className="text-sm text-gray-700">Setup an automated daily backup routine mapping to C:\FIT\backups</p>
+          <pre className="bg-gray-900 text-green-400 rounded-xl p-4 text-xs overflow-x-auto">{`# Register a daily scheduled backup task
+.\\backup-restore.ps1 -Action schedule
+
+# Run a manual backup instantly
+.\\backup-restore.ps1 -Action backup`}</pre>
+        </div>
+      ),
+    },
+    {
+      title: 'Step 4 — Verify & Go Live',
       icon: <CheckCircle size={18} />,
       content: (
         <div className="space-y-3">
           <p className="text-sm text-gray-700">Final verification checklist before going live:</p>
           <div className="space-y-2">
             {[
-              'Visit the deployed URL — app loads correctly',
-              'Navigate to all 6 sections (Dashboard, Customers, Sources, Entries, Reports, Settings)',
-              'Add a test customer and verify it persists after page refresh',
+              'Visit the deployed application URL (http://localhost:3001 or LAN IP) — app loads correctly',
+              'Check Node.js logs using command: pm2 logs fit-backend',
+              'Log in using default administrator credentials and change passwords',
+              'Add a test customer and verify the record hits the MySQL base correctly',
               'Create a box entry and generate a PDF bill',
-              'Export a JSON backup from Settings → Backup & Restore',
-              'Test on mobile browser (Chrome / Safari) for responsive layout',
-              'Verify HTTPS is active (padlock icon in browser)',
-              'Share the URL with your team and confirm access',
+              'Verify the total sent counts sync and aggregate properly',
+              'Test on mobile browser across the LAN network',
             ].map((item, i) => (
               <div key={i} className="flex items-start gap-2 text-xs text-gray-600 bg-gray-50 rounded-lg p-2">
                 <span className="bg-blue-900 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs shrink-0 font-bold">{i + 1}</span>
@@ -620,7 +525,7 @@ sudo certbot --nginx -d your-domain.com`}</pre>
         <Server size={20} className="text-blue-700" /> Step-by-Step Deployment Guide
       </h2>
       <p className="text-sm text-gray-600 mb-6">
-        For technical team. Follow these steps to deploy FIT to any static hosting platform.
+        For technical team. Follow these steps to deploy FIT in a production Windows environment.
       </p>
       <div className="space-y-3">
         {steps.map((step, i) => (

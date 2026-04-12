@@ -32,6 +32,8 @@
 |   - box_entry                |
 |   - inventory_source         |
 |   - audit_log                |
+|   - app_settings             |
+|   - user                     |
 | - Connection details:        |
 |   - Host: localhost:3308     |
 |   - DB: fit_db               |
@@ -46,10 +48,22 @@
 | - Zero-API cost sharing      |
 +-----------------------------+
 
++-----------------------------+
+|   DEPLOYMENT ARCHITECTURE   |
+| - Single-Machine Deployment |
+| - Node/Express (Port 3001)  |
+|   serves UI + REST API      |
+| - Optional: Nginx Proxy     |
+|   (Port 80/443) -> 3001     |
+| - WhatsApp: fitshare://     |
+|   -> Local PowerShell       |
++-----------------------------+
+
 ```mermaid
 graph TD
-Frontend --> Backend
-Backend --> Database
-Frontend --> WhatsApp
-Database --> Frontend
+    Client[Browser / Client] -->|HTTP :3001| Server[Express Backend]
+    Server -->|Static Files| Frontend[React UI]
+    Server -->|TypeORM| Database[(MySQL Docker)]
+    Frontend -->|fitshare://| Protocol[OS Protocol Handler]
+    Protocol -->|PS Script| WhatsApp[WhatsApp Web]
 ```

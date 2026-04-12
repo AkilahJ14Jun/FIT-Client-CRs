@@ -727,7 +727,12 @@ export const Dispatch: React.FC = () => {
                     <div className="sm:col-span-2 bg-blue-50 rounded-xl px-4 py-3 text-sm text-blue-800 flex gap-6 flex-wrap">
                       <span className="flex items-center gap-1"><User size={13} /> {c.customerName}</span>
                       <span>{c.shopName}</span>
-                      <span>📞 {c.mobile}</span>
+                      <div className="flex gap-4">
+                        <span>📞 {c.mobile}</span>
+                        {c.alternateMobile && (
+                          <span className="text-blue-600 opacity-80">📱 Alt: {c.alternateMobile}</span>
+                        )}
+                      </div>
                     </div>
                   ) : null;
                 })()}

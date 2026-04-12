@@ -1,6 +1,6 @@
 # FIT (Fish Inventory Tracking) — Windows Production Deployment Guide
 
-> **Last updated:** 12 April 2026 · **Stack:** React + Vite · Express.js + TypeORM · MySQL 8.0 (Docker) · Windows
+> **Last updated:** April 2026 · **Stack:** React + Vite · Express.js + TypeORM · MySQL 8.0 (Docker) · Nginx · Windows
 
 ---
 
@@ -20,7 +20,6 @@ Open PowerShell **as Administrator** from the project root:
 |------|---------|
 | `-InstallRoot "D:\FIT"` | Install to a custom directory (default: `C:\FIT`) |
 | `-NginxRoot "D:\nginx"` | Custom Nginx location (default: `C:\nginx`) |
-| `-UseNSSM` | Use NSSM (Windows Services) instead of PM2 — for headless servers only |
 | `-SkipWhatsApp` | Skip WhatsApp `fitshare://` protocol registration |
 | `-SkipFirewall` | Skip Windows Firewall rule creation |
 | `-Force` | Overwrite existing files at `-InstallRoot` |
@@ -34,9 +33,8 @@ Open PowerShell **as Administrator** from the project root:
 - **Node.js** 20+ (LTS) — <https://nodejs.org/> — select "Add to PATH" during install
 - **Git** — <https://git-scm.com/download/win>
 - **Docker Desktop for Windows** — <https://www.docker.com/products/docker-desktop/>
-- **PM2** (process manager) — installed via npm, no download needed (see Step 3)
-- **Nginx** *(optional)* — <https://nginx.org/en/download.html> — only needed if you want port 80/443 or advanced reverse proxy features
-- **NSSM** *(optional, for headless servers)* — <https://nssm.cc/download> — only needed if running as a Windows Service without a logged-in user
+- **NSSM** (Non-Sucking Service Manager) — <https://nssm.cc/download> — to run backend as a Windows Service
+- **Nginx** — <https://nginx.org/en/download.html> — download the Windows zip (stable version)
 
 All commands below use **PowerShell** (run as Administrator where noted).
 
@@ -84,27 +82,9 @@ docker compose version
 
 1. Download the stable Windows zip from <https://nginx.org/en/download.html>
 2. Extract the zip to `C:\nginx` (or your preferred location)
-3. You will configure this later in Step 4
+3. You will configure this later in Step 6
 
-> **Skip this step** if you're doing a simple single-machine deployment. The Express backend can serve the frontend directly on port 3001 — no Nginx needed.
-
-### 1.5 Install PM2 (Process Manager)
-
-PM2 is the recommended way to run the backend in production on single-machine deployments (e.g., a shop PC). Install it globally:
-
-```powershell
-npm install -g pm2 pm2-windows-startup
-```
-
-Verify:
-
-```powershell
-pm2 --version
-```
-
-### 1.6 Download NSSM (Optional — headless servers only)
-
-> **When to use NSSM instead of PM2:** If the production machine runs without anyone logged in (e.g., a dedicated server in a rack, remote desktop only), you need NSSM to register the backend as a true Windows Service. For a single-machine setup where a user is always logged in, PM2 is simpler and sufficient.
+### 1.5 Download NSSM
 
 1. Download NSSM from <https://nssm.cc/download>
 2. Extract the zip
@@ -176,84 +156,15 @@ npm install
 npm run build
 ```
 
-The output will be in `C:\FIT\dist\`. The Express backend will automatically detect and serve these files in production. If you're also using Nginx, it can serve them instead (see Step 4).
-
-> **Important:** The `dist/` folder must be at `C:\FIT\dist\` (sibling of the `server/` folder) for the backend to find it automatically.
+The output will be in `C:\FIT\dist\`. This is a static site ready to be served by Nginx.
 
 ---
 
-## Step 3: Run the Backend in Production
+## Step 3: Run the Backend as a Windows Service (NSSM)
 
-Choose **one** of the two options below based on your deployment scenario:
+Running the backend as a Windows Service ensures it auto-starts on boot and survives logouts.
 
-| Scenario | Recommended | Why |
-|----------|-------------|-----|
-| **Single-machine** (shop PC, someone always logged in) | **Option A: PM2** | No extra downloads, simple commands, built-in log management |
-| **Headless server** (no user logged in, remote-only) | **Option B: NSSM** | Runs as a true Windows Service, survives logouts |
-
-### Option A: PM2 (Recommended for single-machine)
-
-#### 3A.1 Create logs directory
-
-```powershell
-mkdir C:\FIT\server\logs -Force
-```
-
-#### 3A.2 Start the backend with PM2
-
-```powershell
-cd C:\FIT\server
-pm2 start dist/index.js --name fit-backend
-```
-
-#### 3A.3 Save the process list and enable auto-start
-
-```powershell
-pm2 save
-pm2-startup install    # Registers PM2 to auto-start on boot
-```
-
-> `pm2-startup install` creates a scheduled task so PM2 and all saved processes start automatically when Windows boots and the user logs in.
-
-#### 3A.4 Verify the backend is running
-
-```powershell
-pm2 status
-```
-
-You should see `fit-backend` with status `online`. Then verify the API:
-
-```powershell
-Invoke-RestMethod -Uri http://localhost:3001/api/settings
-```
-
-You should see a JSON settings response.
-
-#### 3A.5 Useful PM2 commands
-
-```powershell
-pm2 status                     # Show all processes
-pm2 restart fit-backend        # Restart the backend
-pm2 stop fit-backend           # Stop the backend
-pm2 logs fit-backend           # View live logs (Ctrl+C to exit)
-pm2 logs fit-backend --lines 50  # View last 50 log lines
-pm2 delete fit-backend         # Remove from PM2 process list
-pm2 monit                      # Real-time monitoring dashboard
-```
-
----
-
-### Option B: NSSM (For headless servers)
-
-> Use this option if the machine needs to run the backend **without any user logged in** (e.g., a dedicated server accessed only via Remote Desktop).
-
-#### 3B.1 Create logs directory
-
-```powershell
-mkdir C:\FIT\server\logs -Force
-```
-
-#### 3B.2 Install the service
+### 3.1 Install the service
 
 Open PowerShell **as Administrator**, then run:
 
@@ -276,7 +187,13 @@ In the NSSM GUI dialog that opens, fill in:
 
 Click **Install service**.
 
-#### 3B.3 Start and verify the service
+### 3.2 Create logs directory
+
+```powershell
+mkdir C:\FIT\server\logs -Force
+```
+
+### 3.3 Start and verify the service
 
 ```powershell
 nssm start fit-backend
@@ -291,7 +208,7 @@ Invoke-RestMethod -Uri http://localhost:3001/api/settings
 
 You should see a JSON settings response.
 
-#### 3B.4 Useful NSSM commands
+### 3.4 Useful NSSM commands
 
 ```powershell
 nssm stop fit-backend          # Stop the service
@@ -301,32 +218,9 @@ nssm remove fit-backend confirm # Remove the service
 
 ---
 
-## Step 4: Configure Nginx (Optional)
+## Step 4: Configure Nginx as Reverse Proxy
 
-The Express backend already serves the frontend directly on port **3001**. Nginx is **only needed** if you want:
-- Port 80/443 (so users don't type `:3001`)
-- SSL/HTTPS termination
-- Gzip compression and static asset caching at the proxy level
-- Future load balancing
-
-> **For most single-machine deployments, skip this step entirely.** Users can access the app at `http://<server-ip>:3001`.
-
-### If you choose NOT to use Nginx
-
-No action needed — the backend already serves both the API and frontend. After Step 3, the app is accessible at:
-
-```
-http://localhost:3001          (on the server itself)
-http://<server-ip>:3001        (from other machines on the LAN)
-```
-
-Skip ahead to [Step 5: Register WhatsApp Automation](#step-5-register-whatsapp-automation-zero-api-sharing).
-
----
-
-### If you choose to use Nginx
-
-#### 4.1 Create the Nginx config
+### 4.1 Create the Nginx config
 
 Open the file `C:\nginx\conf\nginx.conf` in a text editor (run as Administrator) and replace its contents with:
 
@@ -353,27 +247,46 @@ http {
         listen       80;
         server_name  localhost;  # Change to your domain if using one
 
-        # Proxy everything to Express (which serves both API + frontend)
+        # Frontend static files
         location / {
+            root   C:/FIT/dist;
+            index  index.html;
+            try_files $uri $uri/ /index.html;
+        }
+
+        # Proxy API requests to backend
+        location /api {
             proxy_pass          http://localhost:3001;
             proxy_http_version  1.1;
             proxy_set_header    Host $host;
             proxy_set_header    X-Real-IP $remote_addr;
             proxy_set_header    X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header    X-Forwarded-Proto $scheme;
+
+            # Timeouts for long-running requests
+            proxy_connect_timeout 60s;
+            proxy_send_timeout    60s;
+            proxy_read_timeout    60s;
         }
 
         # Enable gzip compression
         gzip on;
         gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
         gzip_min_length 256;
+
+        # Cache static assets (30 days)
+        location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+            root   C:/FIT/dist;
+            expires 30d;
+            add_header Cache-Control "public, immutable";
+        }
     }
 }
 ```
 
 > **Note:** Use forward slashes (`/`) in the `root` path, not backslashes, even on Windows.
 
-#### 4.2 Test and start Nginx
+### 4.2 Test and start Nginx
 
 ```powershell
 cd C:\nginx
@@ -386,16 +299,9 @@ You should see `test is successful`. Start Nginx:
 .\nginx.exe
 ```
 
-> Nginx on Windows runs in the foreground by default. To keep it running, choose one:
->
-> **PM2 (recommended for single-machine):**
->
-> ```powershell
-> pm2 start C:\nginx\nginx.exe --name fit-nginx
-> pm2 save
-> ```
->
-> **NSSM (for headless servers):**
+> Nginx on Windows runs in the foreground by default. To keep it running, either:
+> - Leave the terminal window open, or
+> - Register it as a Windows Service using NSSM (see Step 3 pattern):
 >
 > ```powershell
 > nssm install fit-nginx C:\nginx\nginx.exe
@@ -405,7 +311,7 @@ You should see `test is successful`. Start Nginx:
 > nssm start fit-nginx
 > ```
 
-#### 4.3 Useful Nginx commands (Windows)
+### 4.3 Useful Nginx commands (Windows)
 
 ```powershell
 cd C:\nginx
@@ -419,24 +325,22 @@ cd C:\nginx
 
 This step enables the app to send PDF receipts via WhatsApp Web with no API cost. It works by registering a custom URL protocol (`fitshare://`) in the Windows Registry so that when a user clicks a WhatsApp-share link in the app, Windows automatically launches a PowerShell script that handles file movement and WhatsApp Web interaction.
 
-### 5.1 Choosing the right script
+### Scripts Overview
 
-The application includes two main automation handlers. Both can be used by modifying `$ScriptPath` in `RegisterProtocol.ps1`.
+| Script | Purpose | When to Run | Privilege |
+|--------|---------|-------------|-----------|
+| `RegisterProtocol.ps1` | Writes the `fitshare://` URL handler to the Windows Registry and sets Edge/Chrome auto-launch policies | **Once during deployment** | **Administrator** |
+| `FITShareFinal.ps1` | The handler itself — moves downloaded PDFs to `~/Downloads/FIT Reports/` and automates WhatsApp Web | Never run manually — invoked by Windows whenever a `fitshare://` link is clicked | Standard user |
+| `ShareOnWhatsApp.ps1` | Alternative handler with smarter Win32 window detection and clipboard-based paste. Replace `FITShareFinal.ps1` if you want improved reliability | Never run manually — same as above | Standard user |
+| `debug_windows.ps1` | One-off debugging tool that dumps visible window titles. Not required for production. | If you need to debug why a window isn't found | Standard user |
 
-| Script | Recommendation | Feature |
-|--------|----------------|---------|
-| `FITShareFinal.ps1` | **Legacy / Simple** | Basic automation. Reliable for most setups. |
-| `ShareOnWhatsApp.ps1` | **Current / Recommended** | Improved reliability, CLIPBOARD-based paste (safer), and smarter window detection. **This is the current solution default.** |
-
-### 5.2 Update script paths in `RegisterProtocol.ps1`
+### 5.1 Update script paths in `RegisterProtocol.ps1`
 
 Open `C:\FIT\scripts\RegisterProtocol.ps1` and verify the script path matches your installation:
 
 ```powershell
-$ScriptPath = "C:\FIT\scripts\ShareOnWhatsApp.ps1"
+$ScriptPath = "C:\FIT\scripts\FITShareFinal.ps1"
 ```
-
-> **Note:** The "Launch Automated Share" feature in the app's WhatsApp modal uses this protocol. It supports both primary and **alternate mobile numbers** selected during the dispatch workflow.
 
 > If you prefer the more advanced handler (`ShareOnWhatsApp.ps1`), copy it over `FITShareFinal.ps1` or point `$ScriptPath` to it.
 
@@ -470,8 +374,8 @@ A hidden PowerShell window will briefly run and you should see console output co
 2. Browser navigates to a `fitshare://send?phone=...&file=...` URL
 3. Windows detects the protocol and launches `FITShareFinal.ps1` (hidden)
 4. The script:
-   - Finds the PDF in the user's `Downloads` folder (or subfolder)
-   - Moves it to `~/Downloads/FIT Reports/` (the permanent storage for dispatched receipts)
+   - Finds the PDF in the user's `Downloads` folder
+   - Moves it to `~/Downloads/FIT Reports/`
    - Opens WhatsApp Web (or focuses an existing tab)
    - Searches for the contact by phone number
    - Attaches the PDF and sends it
@@ -531,29 +435,21 @@ Use **Win-ACME** (<https://www.win-acme.com/>) to get a free Let's Encrypt certi
 
 ## Step 7: Windows Firewall Configuration
 
-### 7.1 Allow the application through the firewall
+### 7.1 Allow Nginx through the firewall
 
 Open PowerShell **as Administrator**:
-
-**Without Nginx** (app on port 3001):
-
-```powershell
-New-NetFirewallRule -DisplayName "FIT Backend (HTTP)" -Direction Inbound -Protocol TCP -LocalPort 3001 -Action Allow
-```
-
-**With Nginx** (app on port 80/443):
 
 ```powershell
 New-NetFirewallRule -DisplayName "FIT Nginx (HTTP)" -Direction Inbound -Protocol TCP -LocalPort 80 -Action Allow
 New-NetFirewallRule -DisplayName "FIT Nginx (HTTPS)" -Direction Inbound -Protocol TCP -LocalPort 443 -Action Allow
 ```
 
-### 7.2 Allow through Windows Defender Firewall GUI (alternative)
+### 7.2 Allow Nginx through Windows Defender Firewall GUI (alternative)
 
 1. Open **Windows Defender Firewall with Advanced Security**
 2. Click **Inbound Rules** > **New Rule**
 3. Select **Port**, click Next
-4. Select **TCP**, enter the port(s): `3001` (without Nginx) or `80, 443` (with Nginx)
+4. Select **TCP**, enter `80, 443` under Specific local ports
 5. Select **Allow the connection**, click Next
 6. Check all profiles (Domain, Private, Public), click Next
 7. Name it `FIT Application`, click Finish
@@ -594,18 +490,7 @@ Register-ScheduledTask -TaskName "FIT-MySQL" -Action $action -Trigger $trigger -
 
 ### Backend & Nginx
 
-**If using PM2 (Option A):**
-
-PM2 handles auto-start via the `pm2-startup install` command from Step 3A.3. Verify it's configured:
-
-```powershell
-pm2 save       # Ensures current process list is saved
-pm2 startup    # Verify startup hook is registered
-```
-
-**If using NSSM (Option B):**
-
-NSSM services (`fit-backend`, `fit-nginx`) auto-start on boot automatically since they are registered with `SERVICE_AUTO_START`. No additional configuration needed.
+If you installed them as NSSM services (`fit-backend`, `fit-nginx`), they will auto-start on boot automatically. If you're running Nginx manually, register it with NSSM as shown in Step 4.
 
 ---
 
@@ -651,25 +536,17 @@ docker exec fit_mysql_db mysqldump -uroot -proot --single-transaction fit_db > C
 
 ```powershell
 Get-Content C:\FIT\backups\manual_backup.sql -Raw | docker exec -i fit_mysql_db mysql -uroot -proot fit_db
-# Restart the backend after restore:
-pm2 restart fit-backend        # if using PM2
-# OR
-nssm restart fit-backend       # if using NSSM
+nssm restart fit-backend
 ```
 
 ---
 
 ## Step 10: Verify the Deployment
 
-1. **Frontend:** Open a browser and go to:
-   - Without Nginx: `http://localhost:3001` (or `http://<server-ip>:3001` from another machine)
-   - With Nginx: `http://localhost` (or `http://<server-ip>`)
+1. **Frontend:** Open a browser and go to `http://localhost` (or `http://<server-ip>` if accessing from another machine on the network)
 2. **API:** Run in PowerShell:
 
    ```powershell
-   # Without Nginx:
-   Invoke-RestMethod -Uri http://localhost:3001/api/settings
-   # With Nginx:
    Invoke-RestMethod -Uri http://localhost/api/settings
    ```
 
@@ -683,102 +560,56 @@ nssm restart fit-backend       # if using NSSM
 
 ## Quick Reference
 
-| Component | Port | Management (PM2) | Management (NSSM) |
-|-----------|------|-------------------|--------------------|
-| MySQL (Docker) | 3308 (host) / 3306 (container) | `docker ps` / `docker logs fit_mysql_db` | same |
-| Backend + Frontend | 3001 (Production) | `pm2 status` / `pm2 logs fit-backend` | `nssm status fit-backend` |
-| Nginx *(optional)* | 80 / 443 | `C:\nginx\nginx.exe -s reload` | same |
+| Component | Port | Management |
+|-----------|------|------------|
+| MySQL (Docker) | 3308 (host) / 3306 (container) | `docker ps` / `docker logs fit_mysql_db` |
+| Backend API | 3001 | `services.msc` > FIT Backend API / `nssm status fit-backend` |
+| Nginx (Frontend) | 80 / 443 | `C:\nginx\nginx.exe -s reload` |
 
-### Common Tasks (PM2)
-
-```powershell
-# Restart backend (also restarts frontend serving)
-pm2 restart fit-backend
-
-# View backend logs (last 50 lines)
-pm2 logs fit-backend --lines 50
-
-# Live monitoring dashboard
-pm2 monit
-
-# Rebuild & redeploy frontend (no Nginx)
-cd C:\FIT; npm run build; pm2 restart fit-backend
-
-# Rebuild & redeploy frontend (with Nginx)
-cd C:\FIT; npm run build; cd C:\nginx; .\nginx.exe -s reload
-
-# Check all services
-pm2 status
-docker ps
-
-# Update deployment (pull new code)
-cd C:\FIT
-git pull
-npm install; npm run build                         # Frontend
-cd server; npm install; npx tsc; cd ..             # Backend
-pm2 restart fit-backend
-
-# Database backup
-.\backup-restore.ps1 -Action backup
-```
-
-### Common Tasks (NSSM)
+### Common Tasks
 
 ```powershell
-# Restart backend (also restarts frontend serving)
+# Restart backend service
 nssm restart fit-backend
 
 # View backend logs (last 50 lines)
 Get-Content C:\FIT\server\logs\stderr.log -Tail 50
 
+# Rebuild & redeploy frontend
+cd C:\FIT && npm run build && cd C:\nginx && .\nginx.exe -s reload
+
 # Check all services
 nssm status fit-backend
+nssm status fit-nginx
 docker ps
 
 # Update deployment (pull new code)
 cd C:\FIT
 git pull
-npm install; npm run build                         # Frontend
-cd server; npm install; npx tsc; cd ..             # Backend
+npm install && npm run build                      # Frontend
+cd server && npm install && npx tsc && cd ..      # Backend
 nssm restart fit-backend
+cd C:\nginx; .\nginx.exe -s reload
+
+# Database backup
+.\backup-restore.ps1 -Action backup
 ```
 
 ---
 
 ## Troubleshooting
 
-### Backend won't start
-
-**If using PM2:**
-
-```powershell
-# Check PM2 status and logs
-pm2 status
-pm2 logs fit-backend --lines 100
-
-# If the process is errored, delete and re-add
-pm2 delete fit-backend
-cd C:\FIT\server
-pm2 start dist/index.js --name fit-backend
-pm2 save
-```
-
-**If using NSSM:**
+### Backend won't start / NSSM shows SERVICE_STOPPED
 
 ```powershell
 # Check error logs
 Get-Content C:\FIT\server\logs\stderr.log -Tail 100
-nssm status fit-backend
-```
 
-**Common causes (both):**
-
-```powershell
+# Common causes:
 # 1. MySQL not running → docker compose up -d
 # 2. Port 3001 already in use → netstat -ano | findstr 3001
 # 3. TypeScript not compiled → cd C:\FIT\server && npx tsc
 # 4. Missing .env → verify C:\FIT\server\.env exists with correct DB credentials
-# 5. IPv6 Conflict → If "localhost" fails to connect, try using "127.0.0.1" in .env (Windows sometimes maps localhost to ::1)
 ```
 
 ### Frontend shows blank page or 404
@@ -788,14 +619,10 @@ nssm status fit-backend
 dir C:\FIT\dist
 
 # Rebuild if needed
-cd C:\FIT; npm run build
+cd C:\FIT && npm run build
 
-# Restart backend (it re-detects the dist/ folder on startup)
-pm2 restart fit-backend        # if using PM2
-nssm restart fit-backend       # if using NSSM
-
-# If using Nginx, also reload it
-cd C:\nginx; .\nginx.exe -s reload
+# Reload Nginx after rebuild
+cd C:\nginx && .\nginx.exe -s reload
 ```
 
 ### MySQL connection refused
@@ -829,11 +656,6 @@ cd C:\FIT\scripts && .\RegisterProtocol.ps1
 # 4. Ensure WhatsApp Web is logged in and the browser (Edge/Chrome) is open
 ```
 
-### Note on Ports (Dev vs Prod)
-
-- **Development**: Frontend is on `:5173` (Vite dev server), Backend is on `:3001`.
-- **Production**: Both Frontend and Backend are served on port **`:3001`** by the Express server. The Vite dev server is not used in production.
-
 ### Port conflicts
 
 ```powershell
@@ -850,33 +672,25 @@ Stop-Process -Id <PID> -Force
 
 ## Deployment Checklist
 
-**Core (required):**
-
 - [ ] Node.js 20+ installed and in PATH
 - [ ] Docker Desktop for Windows installed and running
-- [ ] PM2 installed globally (`npm install -g pm2 pm2-windows-startup`)
+- [ ] NSSM downloaded and accessible
+- [ ] Nginx for Windows extracted to `C:\nginx`
 - [ ] Project cloned/copied to `C:\FIT`
 - [ ] MySQL container running (`docker compose up -d`)
 - [ ] Backend `.env` verified with correct DB credentials and `NODE_ENV=production`
 - [ ] Backend installed and compiled (`cd server && npm install && npx tsc`)
-- [ ] Frontend built (`npm run build`) — output in `C:\FIT\dist\`
-- [ ] Backend running via PM2 (`pm2 start dist/index.js --name fit-backend`) or NSSM
-- [ ] PM2 process saved and auto-start configured (`pm2 save && pm2-startup install`)
-- [ ] App accessible at `http://localhost:3001`
-- [ ] Windows Firewall rule added for port 3001
+- [ ] Backend running as Windows Service via NSSM (`nssm start fit-backend`)
+- [ ] Frontend built (`npm run build`)
+- [ ] Nginx configured and running (serving `dist/`, proxying `/api`)
+- [ ] WhatsApp protocol registered (`RegisterProtocol.ps1` run as Administrator)
+- [ ] `fitshare://test` URL confirmed working
+- [ ] HTTPS configured (self-signed or Let's Encrypt via Win-ACME)
+- [ ] Windows Firewall rules added — ports 80, 443 only
 - [ ] MySQL port NOT exposed to the internet
 - [ ] Default admin passwords changed
-- [ ] Auto-start on boot configured (Scheduled Task for MySQL, PM2/NSSM for backend)
+- [ ] Auto-start on boot configured (Scheduled Task for MySQL, NSSM for backend + Nginx)
 - [ ] Daily backup scheduled (`FIT-DailyBackup` task)
 - [ ] Tested frontend, API, and login from a browser
+- [ ] Tested WhatsApp PDF sharing from the app
 - [ ] Backup strategy verified (run `.\backup-restore.ps1 -Action backup` and confirm)
-
-**Optional:**
-
-- [ ] *(If headless server)* NSSM downloaded and accessible
-- [ ] *(If using Nginx)* Nginx for Windows extracted and configured
-- [ ] *(If using Nginx)* Firewall rules for ports 80, 443 instead of 3001
-- [ ] *(If WhatsApp sharing)* Protocol registered (`RegisterProtocol.ps1` as Administrator)
-- [ ] *(If WhatsApp sharing)* `fitshare://test` URL confirmed working
-- [ ] *(If WhatsApp sharing)* Tested PDF sharing from the app
-- [ ] *(If HTTPS needed)* SSL configured (self-signed or Let's Encrypt via Win-ACME)
