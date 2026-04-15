@@ -2,7 +2,7 @@
   "name": "fit-backend",
   "version": "1.0.0",
   "description": "Node.js backend for FIT application",
-  "main": "src/index.ts",
+  "main": "src/index.js",
   "scripts": {
     "start": "ts-node src/index.ts",
     "dev": "nodemon src/index.ts",

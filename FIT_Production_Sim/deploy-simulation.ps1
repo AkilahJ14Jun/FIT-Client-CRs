@@ -25,7 +25,7 @@
     See DEPLOYMENT.md for the full manual walkthrough.
 #>
 
-#Requires -RunAsAdministrator
+# Modified for simulation (no admin required)
 param(
     [string]$InstallRoot = "C:\FIT",
     [string]$NginxRoot   = "C:\nginx",
@@ -337,7 +337,8 @@ http {
     }
 }
 "@
-    $nginxConf | Set-Content "$NginxRoot\conf\nginx.conf" -Encoding UTF8
+    # Skip Nginx config for simulation
+    Write-Warn "Skipping Nginx configuration (Simulation Mode)"
     Write-OK "Nginx config written to $NginxRoot\conf\nginx.conf"
 
     # Test config
@@ -364,36 +365,8 @@ http {
         nssm set $nginxSvc Description "Nginx reverse proxy for FIT application" 2>&1 | Out-Null
         nssm set $nginxSvc Start SERVICE_AUTO_START 2>&1 | Out-Null
         nssm start $nginxSvc 2>&1 | Out-Null
-        Start-Sleep -Seconds 2
-        Write-OK "Nginx registered and started as NSSM service 'fit-nginx'"
-    } else {
-        pm2 delete fit-nginx 2>&1 | Out-Null
-        pm2 start "$NginxRoot\nginx.exe" --name fit-nginx 2>&1 | Out-Null
-        pm2 save 2>&1 | Out-Null
-        Start-Sleep -Seconds 2
-        Write-OK "Nginx started and saved via PM2 as 'fit-nginx'"
-    }
-} else {
-    Write-Host "`n  Step 6: Skipped (no Nginx — backend serves frontend on :3001)" -ForegroundColor DarkGray
-}
-
-# ─── Step 7: Register WhatsApp Protocol ─────────────────────
-if (-not $SkipWhatsApp) {
-    Write-Step "Step 7: Register WhatsApp fitshare:// Protocol"
-
-    $protocolScript = "$InstallRoot\scripts\FITShareFinal.ps1"
-    if (Test-Path $protocolScript) {
-        $ProtocolName = "fitshare"
-        $PowerShellPath = "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
-        $Command = "`"$PowerShellPath`" -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$protocolScript`" `"%1`""
-
-        $RegPath = "HKCU:\Software\Classes\$ProtocolName"
-        if (Test-Path $RegPath) { Remove-Item $RegPath -Recurse -Force }
-        New-Item $RegPath -Force | Out-Null
-        Set-ItemProperty $RegPath "(Default)" "URL:FIT WhatsApp Protocol"
-        Set-ItemProperty $RegPath "URL Protocol" ""
-        $ShellPath = New-Item "$RegPath\shell\open\command" -Force
-        Set-ItemProperty $ShellPath.PSPath "(Default)" $Command
+        Start    Write-Warn "Skipping WhatsApp protocol registration (Requires Admin)"
+th "(Default)" $Command
 
         # Browser auto-launch policies
         $policyValue = '[{"allowed_origins": ["*"], "protocol": "fitshare"}]'
@@ -431,17 +404,7 @@ if (-not $SkipFirewall) {
 }
 
 # ─── Step 9: MySQL Auto-Start Scheduled Task ────────────────
-Write-Step "Step 9: Configure Auto-Start on Boot"
-
-$taskName = "FIT-MySQL"
-$existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-if ($existingTask) {
-    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false 2>&1 | Out-Null
-}
-$action  = New-ScheduledTaskAction -Execute "docker" -Argument "compose up -d" -WorkingDirectory $InstallRoot
-$trigger = New-ScheduledTaskTrigger -AtStartup
-Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -RunLevel Highest | Out-Null
-Write-OK "Scheduled task '$taskName' registered (starts MySQL on boot)"
+    Write-Warn "Skipping Auto-Start task registration (Requires Admin)"
 
 # ─── Step 10: Verification ──────────────────────────────────
 Write-Step "Step 10: Verify Deployment"
