@@ -1,0 +1,17 @@
+The flow which works with the following steps :
+1. User clicks 'share on whatsapp'
+2. downloadreceiptaspdf() saves pdf to downloads
+3. Navigate to payload.fitshareUrl
+4.fitshare:// triggers windows poweshell handler
+5. powershell finds pdf copies to clipboard
+6. whatsapp web focussed contact found. pdf pasted and sent
+
+Powershell automation steps (shareonwhatsapp.ps1)
+1.Parsel URL - Extract phone and file from fitshare:// query string
+2. Find PDF - Wait for PDFin `/downloads/<filename>
+3. Move file - move to `/downloads/fit Reports/
+4.Copy clipboard - set file as filedroplist on windows clipboard
+5. Find whatsapp - use win32 api to find and focus whatsapp web window
+6. Searh contact - Send Ctrl+Alt+/ then type phone + Enter
+7. Paste & Send - Ctrl+V to attach pdf. enter to send
+8. PDF Sent!
