@@ -1,6 +1,6 @@
 // FIT – Box Dispatch / Return / Opening Balance Entry Form
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Save, ArrowLeft, User, ExternalLink, Building2, Layers, Plus, Trash2 } from 'lucide-react';
 import { useTranslation } from '../i18n/TranslationProvider';
@@ -100,10 +100,11 @@ export const Dispatch: React.FC = () => {
     boxesReturned:    '0',
     driverName:       '',
     vehicleNumber:    '',
-    isExternalSource: false,
-    externalSourceRows: [],
+    isExternalSource: true,
+    externalSourceRows: [{ id: crypto.randomUUID(), sourceId: '', boxCount: '' }],
   });
   const [formErrors, setFormErrors] = useState<Partial<Record<keyof DispatchFormState, string>>>({});
+  const [varietyStock, setVarietyStock] = useState<Record<string, number>>({});
 
   // ── Opening Balance form ──────────────────────────────────────────────────
   const [ob, setOb] = useState<OBFormState>({
@@ -128,6 +129,19 @@ export const Dispatch: React.FC = () => {
       }
     });
   }, [editId, entryType]);
+
+  const loadVarietyStock = useCallback(async () => {
+    const live = await EntryDB.getLiveStockPosition();
+    const stockMap: Record<string, number> = {};
+    live.liveSources.forEach(s => {
+      stockMap[s.sourceId] = s.quantity;
+    });
+    setVarietyStock(stockMap);
+  }, []);
+
+  useEffect(() => {
+    loadVarietyStock();
+  }, [loadVarietyStock]);
 
   // ── Load live stock position when switching to Stock Position for new entries ──
   useEffect(() => {
@@ -220,31 +234,46 @@ export const Dispatch: React.FC = () => {
     });
   }, [editId]);
 
+  const [historicalSummary, setHistoricalSummary] = useState<{
+    cumulativeBalance: number;
+    varietyTotals: Record<string, number>;
+  }>({ cumulativeBalance: 0, varietyTotals: {} });
+
   // ── Auto-populate totalBoxesSent when customer is selected ─────────────────
   const selectedCustomer = customers.find(c => c.id === form.customerId);
-  const cumulativeSent = selectedCustomer?.totalSentCount ?? 0;
+  const [tempInitialTotal, setTempInitialTotal] = useState<string>('0');
+
+  useEffect(() => {
+    if (form.customerId) {
+      CustomerDB.getHistorySummary(form.customerId, editId ? form.billNumber : undefined).then(summary => {
+        setHistoricalSummary(summary);
+        setTempInitialTotal(String(summary.cumulativeBalance));
+      });
+    } else {
+      setHistoricalSummary({ cumulativeBalance: 0, varietyTotals: {} });
+      setTempInitialTotal('0');
+    }
+  }, [form.customerId, editId, form.billNumber]);
+
+  const cumulativeSent = parseInt(tempInitialTotal) || 0;
 
   // ── Balance Boxes (Dispatch / Return) ─────────────────────────────────────
   const balanceBoxes = useMemo(() => {
-    if (isReturn) {
-      const total    = cumulativeSent;
-      const returned = parseInt(form.boxesReturned) || 0;
-      return Math.max(0, total - returned);
-    }
-    const total     = cumulativeSent;
-    const current   = parseInt(form.currentQuantity) || 0;
-    const returned  = parseInt(form.boxesReturned)   || 0;
-    const extBoxes  = form.isExternalSource
-      ? form.externalSourceRows.reduce((s, r) => s + (parseInt(r.boxCount) || 0), 0)
-      : 0;
-    return Math.max(0, total + current + extBoxes - returned);
-  }, [cumulativeSent, form.currentQuantity, form.boxesReturned, form.isExternalSource, form.externalSourceRows, isReturn]);
+    // Calculate effective current quantity from variety rows
+    const varietyTotal = form.externalSourceRows.reduce((s, r) => s + (parseInt(r.boxCount) || 0), 0);
+    
+    // Total balance = (History Sent) + (Current Dispatched) - (Returned Today)
+    const totalSent = cumulativeSent + varietyTotal;
+    const returned = parseInt(form.boxesReturned) || 0;
+    
+    return Math.max(0, totalSent - returned);
+  }, [cumulativeSent, form.boxesReturned, form.externalSourceRows]);
 
   // ── Opening Balance computed totals ───────────────────────────────────────
-  const obCompanyQty = parseInt(ob.companyOwnQuantity) || 0;
   const obSourceRows = ob.sourceRows;
   const obSourceTotal = obSourceRows.reduce((s, r) => s + (parseInt(r.quantity) || 0), 0);
-  const obGrandTotal  = obCompanyQty + obSourceTotal;
+  const obCompanyQty = obSourceTotal; // Calculated from varieties
+  const obGrandTotal  = obCompanyQty;
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const setF = (key: keyof DispatchFormState, value: string | boolean) =>
@@ -270,17 +299,21 @@ export const Dispatch: React.FC = () => {
     const e: Partial<Record<keyof DispatchFormState, string>> = {};
     if (!form.entryDate)         e.entryDate   = 'Date is required';
     if (!form.customerId)        e.customerId  = 'Customer is required';
+    
+    // Auto-calculate currentQuantity for validation
+    const calculatedOwnQty = form.externalSourceRows.reduce((s, r) => s + (parseInt(r.boxCount) || 0), 0);
+    
     if (isReturn) {
       if (!form.boxesReturned || parseInt(form.boxesReturned) <= 0)
         e.boxesReturned = 'Enter number of boxes returned (must be > 0)';
     } else {
-      if (!form.currentQuantity || parseInt(form.currentQuantity) <= 0)
+      if (calculatedOwnQty <= 0)
         e.currentQuantity = 'Quantity sent is required (must be > 0)';
     }
     if (parseInt(form.boxesReturned) < 0) e.boxesReturned = 'Cannot be negative';
-    if (form.isExternalSource) {
+    if (form.isExternalSource || true) { // Variety details are now preferred
       form.externalSourceRows.forEach((r, i) => {
-        if (!r.sourceId)                       e[`ext_src_${i}_id`]   = 'Select a source';
+        if (!r.sourceId)                       e[`ext_src_${i}_id`]   = 'Select a variety';
         if (!r.boxCount || parseInt(r.boxCount) <= 0) e[`ext_src_${i}_count`] = 'Enter quantity > 0';
       });
     }
@@ -346,17 +379,16 @@ export const Dispatch: React.FC = () => {
     try {
       const customer = customers.find((c) => c.id === form.customerId);
 
-      const numCurrentQty = parseInt(form.currentQuantity) || 0;
-      const numReturned   = parseInt(form.boxesReturned)   || 0;
-      const numTotalSent  = cumulativeSent;
-      const extSourceRows = form.isExternalSource
-        ? form.externalSourceRows.map((r) => {
+      const extSourceRows = form.externalSourceRows.map((r) => {
             const src = sources.find((s) => s.id === r.sourceId);
             return { sourceId: r.sourceId, sourceName: src?.sourceName ?? 'Unknown', quantity: parseInt(r.boxCount) || 0 };
-          }).filter((s) => s.quantity > 0)
-        : [];
-      const numExtBoxes   = extSourceRows.reduce((s, r) => s + r.quantity, 0);
-      const computedBal   = Math.max(0, numTotalSent + numCurrentQty + numExtBoxes - numReturned);
+          }).filter((s) => s.quantity > 0);
+      
+      const calculatedOwnQty = extSourceRows.reduce((s, r) => s + r.quantity, 0);
+      const numCurrentQty = calculatedOwnQty;
+      const numReturned   = parseInt(form.boxesReturned)   || 0;
+      const numTotalSent  = cumulativeSent;
+      const computedBal   = Math.max(0, numTotalSent + numCurrentQty - numReturned);
 
       const payload: Omit<BoxEntry, 'id' | 'createdAt' | 'updatedAt'> = {
         billNumber: form.billNumber.trim(), entryDate: form.entryDate,
@@ -365,11 +397,8 @@ export const Dispatch: React.FC = () => {
         totalBoxesSent: numTotalSent, currentQuantity: numCurrentQty,
         boxesReturned: numReturned, balanceBoxes: computedBal,
         driverName: form.driverName.trim(), vehicleNumber: form.vehicleNumber.trim(),
-        isExternalSource: form.isExternalSource,
-        sourceId:         form.isExternalSource && extSourceRows.length === 1 ? extSourceRows[0].sourceId : undefined,
-        sourceName:       form.isExternalSource && extSourceRows.length === 1 ? extSourceRows[0].sourceName : undefined,
-        externalBoxCount: form.isExternalSource && extSourceRows.length === 1 ? extSourceRows[0].quantity : undefined,
-        openingStockSources: form.isExternalSource && extSourceRows.length > 0 ? extSourceRows : undefined,
+        isExternalSource: true, // Always treating as variety-based now
+        openingStockSources: extSourceRows.length > 0 ? extSourceRows : undefined,
       };
 
       const savedEntry = editId
@@ -383,9 +412,10 @@ export const Dispatch: React.FC = () => {
 
       // Persist the updated sent count to the backend
       if (customer && savedEntry && !editId) {
-        const newCount = (customer.totalSentCount ?? 0) + numCurrentQty;
+        // CR6/CR FIX: Update the customer's LIVE balance (Sent - Returned)
+        const newCount = Math.max(0, cumulativeSent + numCurrentQty - numReturned);
         await CustomerDB.update(customer.id, { totalSentCount: newCount });
-        // Update local state so the UI reflects the change immediately
+        // Update local state
         setCustomers(prev => prev.map(c =>
           c.id === customer.id ? { ...c, totalSentCount: newCount } : c
         ));
@@ -498,41 +528,19 @@ export const Dispatch: React.FC = () => {
               </div>
             </Card>
 
-            {/* Company Own Stock */}
-            <Card
-              title={t('dispatch.companyStock')}
-              subtitle={t('dispatch.companyStockSub')}
-            >
-              <div className="flex items-center gap-4">
-                <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-blue-100 text-blue-700 flex-shrink-0">
-                  <Building2 size={22} />
-                </div>
-                <div className="flex-1">
-                  <Input
-                    label={t('dispatch.companyQty')}
-                    type="number"
-                    min="0"
-                    value={ob.companyOwnQuantity}
-                    onChange={(e) => setObField('companyOwnQuantity', e.target.value)}
-                    error={obErrors.companyOwnQuantity}
-                    placeholder="0"
-                    hint={t('dispatch.companyQtyHint')}
-                  />
-                </div>
-              </div>
-            </Card>
+            {/* Company Own Stock card removed as variety detail is the sole source of truth */}
 
             {/* External Sources */}
             <Card
-              title="External Sources"
-              subtitle="Click Add Source to include a new source and enter box count"
+              title={t('dispatch.otherSources')}
+              subtitle={t('dispatch.otherSourcesSub')}
             >
               {ob.sourceRows.length > 0 && (
                 <>
-                  <div className="flex items-center justify-between py-2 mb-2 px-1 border-b border-gray-200">
-                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Source Name</span>
-                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Box Count</span>
-                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide w-7"></span>
+                  <div className="flex flex-row items-center gap-3 py-2 mb-2 border-b border-gray-200">
+                    <span className="flex-1 text-xs font-semibold text-gray-500 uppercase tracking-wide font-mono text-gray-400"># {t('src.srcName')}</span>
+                    <span className="w-32 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right translate-x-5">{t('dispatch.extBoxCount')}</span>
+                    <span className="w-9"></span>
                   </div>
                   {ob.sourceRows.map((row) => {
                     const isNewRow = row.sourceId === '';
@@ -542,35 +550,41 @@ export const Dispatch: React.FC = () => {
                     const src = sources.find((s) => s.id === row.sourceId);
                     const displayName = src?.sourceName ?? (isNewRow ? '' : 'Unknown');
                     return (
-                      <div key={row.id} className="flex items-center gap-3 py-2 border-b border-gray-100 last:border-b-0">
-                        {isNewRow ? (
-                          <select
-                            value={row.sourceId}
-                            onChange={(e) => updateSourceRow(row.id, 'sourceId', e.target.value)}
-                            className="flex-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          >
-                            <option value="">— Select Source —</option>
-                            {availableSources.map((s) => (
-                              <option key={s.id} value={s.id}>{s.sourceName}</option>
-                            ))}
-                          </select>
-                        ) : (
-                          <span className="text-sm text-gray-700 font-medium flex-1 truncate">{displayName}</span>
-                        )}
+                      <div key={row.id} className="flex flex-row items-center gap-3 py-2.5 border-b border-gray-100 last:border-b-0">
+                        <div className="flex-1 min-w-0">
+                          {isNewRow ? (
+                            <select
+                              value={row.sourceId}
+                              onChange={(e) => updateSourceRow(row.id, 'sourceId', e.target.value)}
+                              className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            >
+                              <option value="">— {t('dispatch.addSource')} —</option>
+                              {availableSources.map((s) => (
+                                <option key={s.id} value={s.id}>{s.sourceName}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <span className="text-sm text-gray-700 font-medium truncate block">{displayName}</span>
+                          )}
+                        </div>
                         <input
-                          type="number"
-                          min="0"
+                          type="text"
                           value={row.quantity}
-                          onChange={(e) => updateSourceRow(row.id, 'quantity', e.target.value)}
-                          className="w-24 rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-right font-bold text-indigo-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          onKeyDown={(e) => {
+                            if (['e', 'E', '.', '-', '+'].includes(e.key)) e.preventDefault();
+                          }}
+                          onChange={(e) => updateSourceRow(row.id, 'quantity', e.target.value.replace(/[^0-9]/g, ''))}
+                          className="w-32 rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-right font-bold text-indigo-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-indigo-50/30"
+                          placeholder="0"
                         />
                         <button
                           type="button"
                           onClick={() => removeSourceRow(row.id)}
-                          className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg flex-shrink-0"
+                          tabIndex={-1}
+                          className="w-9 h-9 flex items-center justify-center text-red-300 hover:text-red-500 hover:bg-red-50 rounded-lg flex-shrink-0 focus:outline-none transition-colors"
                           title="Delete"
                         >
-                          <Trash2 size={15} />
+                          <Trash2 size={16} />
                         </button>
                       </div>
                     );
@@ -579,7 +593,7 @@ export const Dispatch: React.FC = () => {
               )}
 
               <Button variant="secondary" size="sm" icon={<Plus size={15} />} onClick={addSourceRow} className="mt-3">
-                Add Source
+                {t('dispatch.addSource')}
               </Button>
             </Card>
 
@@ -598,21 +612,6 @@ export const Dispatch: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {/* Company own stock row */}
-                    <tr className="border-b border-gray-100 bg-blue-50">
-                      <td className="px-4 py-3 font-semibold text-blue-900 flex items-center gap-2">
-                        <Building2 size={14} className="text-blue-600" />
-                        {t('dispatch.companyStock')}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                          {t('dispatch.companyOwned')}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right font-bold text-blue-900 text-base">
-                        {obCompanyQty}
-                      </td>
-                    </tr>
 
                     {/* Source rows from form */}
                     {ob.sourceRows.length > 0 ? ob.sourceRows.map((row) => {
@@ -742,63 +741,47 @@ export const Dispatch: React.FC = () => {
             {/* ── Box Movement ──────────────────────────────────────────── */}
             <Card
               title={t('dispatch.boxMovement')}
-              subtitle={
-                isReturn
-                  ? `${t('dispatch.return')}${' — '}${t('dispatch.balanceFormula')}`
-                  : `${t('dispatch.dispatch')}${' — '}${t('dispatch.balanceFormula')}`
-              }
+              subtitle={isReturn ? t('dispatch.return') : t('dispatch.dispatch')}
             >
-              <div className="mb-4 flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 text-xs text-blue-800 font-medium">
-                <span>📐</span>
-                <span>
-                  {t('dispatch.balanceFormula')}
-                  {!isReturn ? (
-                    <span className="ml-2 text-blue-600">
-                      = {cumulativeSent} + {parseInt(form.currentQuantity) || 0} − {parseInt(form.boxesReturned) || 0}
-                      {' '}= <strong className="text-blue-900">{balanceBoxes}</strong>
-                    </span>
-                  ) : (
-                    <span className="ml-2 text-blue-600">
-                      = {cumulativeSent} − {parseInt(form.boxesReturned) || 0}
-                      {' '}= <strong className="text-blue-900">{balanceBoxes}</strong>
-                    </span>
-                  )}
-                </span>
-              </div>
+
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <div className="flex flex-col gap-1">
                   <label className="text-sm font-medium text-gray-700">{t('dispatch.totalAlreadySent')}</label>
-                  <div className="flex items-center justify-center h-[38px] px-3 rounded-lg border-2 font-extrabold text-lg border-blue-300 bg-blue-50 text-blue-800">
-                    {cumulativeSent}
-                  </div>
-                  <p className="text-xs text-gray-500 text-center">
-                    {form.customerId ? t('dispatch.cumulativeDesc') : t('dispatch.selectCustomer')}
-                  </p>
-                  <input type="hidden" value={cumulativeSent} />
-                </div>
-                {!isReturn && (
-                  <Input
-                    label={t('dispatch.currentQtySent')}
+                  <input
                     type="number"
-                    min="1"
-                    value={form.currentQuantity}
-                    onChange={(e) => setF('currentQuantity', e.target.value)}
-                    error={formErrors.currentQuantity}
-                    placeholder="0"
-                    hint={t('dispatch.currentQtySentHint')}
+                    min="0"
+                    value={tempInitialTotal}
+                    onKeyDown={(e) => {
+                      if (['e', 'E', '.', '-', '+'].includes(e.key)) e.preventDefault();
+                    }}
+                    readOnly={true}
+                    className="flex items-center justify-center h-[38px] px-3 rounded-lg border-2 font-extrabold text-lg transition-all border-blue-300 bg-blue-50 text-blue-800 cursor-not-allowed opacity-80"
                   />
-                )}
-                <Input
-                  label={isReturn ? t('dispatch.boxesReturnedReq') : t('dispatch.boxesReturned')}
-                  type="number"
-                  min="0"
-                  value={form.boxesReturned}
-                  onChange={(e) => setF('boxesReturned', e.target.value)}
-                  error={formErrors.boxesReturned}
-                  placeholder="0"
-                  hint={isReturn ? t('dispatch.returnedReqHint') : t('dispatch.returnedHint')}
-                />
+                  <p className="text-xs text-gray-500 text-center">
+                    {isReturn && cumulativeSent === 0 
+                      ? "Empty balance: cannot return boxes"
+                      : (selectedCustomer?.totalSentCount ?? 0) === 0 
+                        ? "First-time entry: you can set the initial total"
+                        : t('dispatch.cumulativeDesc')}
+                  </p>
+                </div>
+                {/* Removing own inventory qty as requested */}
+                  <Input
+                    label={isReturn ? t('dispatch.boxesReturnedReq') : t('dispatch.boxesReturned')}
+                    type="number"
+                    min="0"
+                    value={form.boxesReturned}
+                    onKeyDown={(e) => {
+                      if (['e', 'E', '.', '-', '+'].includes(e.key)) e.preventDefault();
+                    }}
+                    onChange={(e) => setF('boxesReturned', e.target.value.replace(/[^0-9]/g, ''))}
+                    readOnly={cumulativeSent === 0}
+                    className={cumulativeSent === 0 ? 'bg-gray-50 opacity-80' : ''}
+                    error={formErrors.boxesReturned}
+                    placeholder="0"
+                    hint={cumulativeSent === 0 ? "No boxes were ever sent to this customer" : (isReturn ? t('dispatch.returnedReqHint') : t('dispatch.returnedHint'))}
+                  />
                 <div className="flex flex-col gap-1">
                   <label className="text-sm font-medium text-gray-700">{t('dispatch.balanceBoxes')}</label>
                   <div className={`flex items-center justify-center h-[38px] px-3 rounded-lg border-2 font-extrabold text-lg ${
@@ -851,91 +834,135 @@ export const Dispatch: React.FC = () => {
             {!isReturn && (
               <Card title={t('dispatch.externalSource')} subtitle={t('dispatch.externalSub')}>
                 <div className="space-y-4">
-                  <label className="flex items-center gap-3 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={form.isExternalSource}
-                      onChange={(e) => setF('isExternalSource', e.target.checked)}
-                      className="w-4 h-4 accent-blue-700"
-                    />
-                    <span className="text-sm font-medium text-gray-700 flex items-center gap-1.5">
-                      <ExternalLink size={14} />
-                      {t('dispatch.externalCheckbox')}
-                    </span>
-                  </label>
-                  {form.isExternalSource && (
-                    <div className="space-y-2">
+                  <div className="space-y-2">
                       {form.externalSourceRows.length > 0 && (
                         <>
-                          <div className="flex items-center justify-between py-2 mb-2 px-1 border-b border-gray-200">
-                            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Source Name</span>
-                            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Box Count</span>
-                            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide w-7"></span>
+                          <div className="flex flex-row items-center gap-3 py-2 mb-2 border-b border-gray-200">
+                            <span className="flex-1 text-xs font-semibold text-gray-500 uppercase tracking-wide font-mono text-gray-400"># {t('src.srcName')}</span>
+                            <span className="w-32 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right translate-x-5">{t('dispatch.extBoxCount')}</span>
+                            <span className="w-9"></span>
                           </div>
+
+                          {/* Historical Varieties (Read-Only) */}
+                          {Object.entries(historicalSummary.varietyTotals)
+                            .filter(([_, count]) => count > 0)
+                            .map(([srcId, count]) => {
+                              const s = sources.find(src => src.id === srcId);
+                              return (
+                                <div key={`hist-${srcId}`} className="flex flex-row items-center gap-3 py-1.5 opacity-80 bg-blue-50/30 rounded-lg px-2 mb-1 border border-blue-100/50">
+                                  <span className="flex-1 text-sm text-blue-700/70 font-medium">
+                                    {s?.sourceName || 'Unknown'} <span className="text-[10px] uppercase font-bold ml-2 opacity-60">({t('entries.colAlreadySent')})</span>
+                                  </span>
+                                  <span className="w-32 text-sm font-black text-blue-800 text-right pr-2">{count}</span>
+                                  <div className="w-9 flex justify-center">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-blue-300"></div>
+                                  </div>
+                                </div>
+                              );
+                            })
+                          }
+
+                          {/* Divider if there is history */}
+                          {Object.values(historicalSummary.varietyTotals).some(c => c > 0) && (
+                            <div className="my-4 border-t border-dashed border-gray-200"></div>
+                          )}
                           {form.externalSourceRows.map((row, idx) => {
                             const isNewRow = row.sourceId === '';
+                            // CR FIX: Filter out zero stock items only for Dispatch mode
                             const availableSources = sources.filter(
-                              (s) => s.id === row.sourceId || !form.externalSourceRows.some((r) => r.sourceId === s.id),
+                              (s) => {
+                                const isAlreadyUsed = form.externalSourceRows.some((r, i) => i !== idx && r.sourceId === s.id);
+                                if (isAlreadyUsed) return false;
+                                if (entryType === 'dispatch') {
+                                  return (varietyStock[s.id] || 0) > 0;
+                                }
+                                return true;
+                              }
                             );
                             const src = sources.find((s) => s.id === row.sourceId);
                             const displayName = src?.sourceName ?? (isNewRow ? '' : 'Unknown');
+                            const stock = varietyStock[row.sourceId] || 0;
+                            const threshold = src?.stockThreshold || 0;
+                            const isLow = stock <= threshold;
+                            
                             return (
-                            <div key={row.id} className="flex items-center gap-3 py-2 border-b border-gray-100 last:border-b-0">
-                              {isNewRow ? (
-                                <select
-                                  value={row.sourceId}
+                            <div key={row.id} className="py-1 border-b border-gray-100 last:border-b-0">
+                              <div className="flex flex-row items-center gap-3 py-2">
+                                <div className="flex-1 min-w-0">
+                                  {isNewRow ? (
+                                      <select
+                                        value={row.sourceId}
+                                        onChange={(e) => {
+                                          const rows = [...form.externalSourceRows];
+                                          rows[idx] = { ...row, sourceId: e.target.value, boxCount: '0' };
+                                          setForm(p => ({ ...p, externalSourceRows: rows }));
+                                        }}
+                                        className={`w-full rounded-lg border px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                          formErrors[`ext_src_${idx}_id`] ? 'border-red-500' : 'border-gray-300'
+                                        }`}
+                                      >
+                                        <option value="">— {t('dispatch.invSource').replace('*', '').trim()} —</option>
+                                        {availableSources.map((s) => (
+                                          <option key={s.id} value={s.id}>{s.sourceName}</option>
+                                        ))}
+                                      </select>
+                                  ) : (
+                                    <span className="text-sm text-gray-700 font-medium truncate block">{displayName}</span>
+                                  )}
+                                </div>
+                                <input
+                                  type="text"
+                                  value={row.boxCount}
+                                  disabled={!row.sourceId}
+                                  onKeyDown={(e) => {
+                                    if (['e', 'E', '.', '-', '+'].includes(e.key)) e.preventDefault();
+                                  }}
                                   onChange={(e) => {
+                                    const val = e.target.value.replace(/[^0-9]/g, '');
+                                    const numVal = parseInt(val) || 0;
+                                    const finalVal = numVal > stock ? stock.toString() : val;
                                     const rows = [...form.externalSourceRows];
-                                    rows[idx] = { ...row, sourceId: e.target.value };
+                                    rows[idx] = { ...row, boxCount: finalVal };
                                     setForm(p => ({ ...p, externalSourceRows: rows }));
                                   }}
-                                  className={`flex-1 rounded-lg border px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                                    formErrors[`ext_src_${idx}_id`] ? 'border-red-500' : 'border-gray-300'
-                                  }`}
-                                >
-                                  <option value="">— Select Source —</option>
-                                  {availableSources.map((s) => (
-                                    <option key={s.id} value={s.id}>{s.sourceName}</option>
-                                  ))}
-                                </select>
-                              ) : (
-                                <span className="text-sm text-gray-700 font-medium flex-1 truncate">{displayName}</span>
-                              )}
-                              <input
-                                type="number"
-                                min="0"
-                                value={row.boxCount}
-                                onChange={(e) => {
-                                  const rows = [...form.externalSourceRows];
-                                  rows[idx] = { ...row, boxCount: e.target.value };
-                                  setForm(p => ({ ...p, externalSourceRows: rows }));
-                                }}
-                                className={`w-24 rounded-lg border px-3 py-1.5 text-sm text-right font-bold text-indigo-700 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                                  formErrors[`ext_src_${idx}_count`] ? 'border-red-500' : 'border-gray-300'
-                                }`}
-                                placeholder="0"
-                              />
-                              {form.externalSourceRows.length > 1 && (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setForm(p => ({
-                                      ...p,
-                                      externalSourceRows: p.externalSourceRows.filter((r) => r.id !== row.id),
-                                    }))
-                                  }
-                                  className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg flex-shrink-0"
-                                  title="Remove"
-                                >
-                                  <Trash2 size={15} />
-                                </button>
+                                  className={`w-32 rounded-lg border px-3 py-1.5 text-sm text-right font-bold text-indigo-700 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                    !row.sourceId ? 'bg-gray-50 cursor-not-allowed' : 'bg-indigo-50/30'
+                                  } ${formErrors[`ext_src_${idx}_count`] ? 'border-red-500' : 'border-gray-300'}`}
+                                  placeholder="0"
+                                />
+                                {form.externalSourceRows.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setForm(p => ({
+                                        ...p,
+                                        externalSourceRows: p.externalSourceRows.filter((r) => r.id !== row.id),
+                                      }))
+                                    }
+                                    tabIndex={-1}
+                                    className="w-9 h-9 flex items-center justify-center text-red-300 hover:text-red-500 hover:bg-red-50 rounded-lg flex-shrink-0 focus:outline-none transition-colors"
+                                    title="Remove"
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                )}
+                              </div>
+                              {row.sourceId && (
+                                <div className="flex justify-between px-1">
+                                  <div className="text-[10px] text-gray-400">
+                                    {isLow && stock > 0 && <span className="text-amber-500 font-semibold italic">Low Stock Alert!</span>}
+                                  </div>
+                                  <div className={`text-xs font-bold ${isLow ? 'animate-blink-red' : 'text-emerald-600'}`}>
+                                    Available: {stock} boxes
+                                  </div>
+                                </div>
                               )}
                             </div>
                             );
                           })}
                           {form.externalSourceRows.reduce((s, r) => s + (parseInt(r.boxCount) || 0), 0) > 0 && (
                             <div className="text-right text-sm text-gray-600 font-medium">
-                              Total external boxes: <span className="text-indigo-700 font-semibold">{form.externalSourceRows.reduce((s, r) => s + (parseInt(r.boxCount) || 0), 0)}</span>
+                              {t('dispatch.currentQtySent')}: <span className="text-indigo-700 font-semibold">{form.externalSourceRows.reduce((s, r) => s + (parseInt(r.boxCount) || 0), 0)}</span>
                             </div>
                           )}
                         </>
@@ -950,10 +977,9 @@ export const Dispatch: React.FC = () => {
                           }],
                         }))
                       } className="mt-3">
-                        Add Source
+                        {t('dispatch.addSource')}
                       </Button>
                     </div>
-                  )}
                 </div>
               </Card>
             )}

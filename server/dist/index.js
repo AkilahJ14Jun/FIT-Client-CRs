@@ -24,6 +24,7 @@ const AppSettings_1 = require("./entity/AppSettings");
 const AuditLog_1 = require("./entity/AuditLog");
 const CustomerArea_1 = require("./entity/CustomerArea");
 const User_1 = require("./entity/User");
+const typeorm_1 = require("typeorm");
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const app = (0, express_1.default)();
 app.use((0, cors_1.default)());
@@ -138,17 +139,126 @@ app.post("/api/entries/delete-all", (req, res) => __awaiter(void 0, void 0, void
         const countResult = yield repo.count();
         if (countResult === 0)
             return res.json({ success: true, deletedCount: 0, message: 'No entries to delete' });
-        yield repo.delete({}); // Delete all rows, keep table
+        yield repo.delete({ id: (0, typeorm_1.Not)((0, typeorm_1.IsNull)()) }); // TypeORM workaround for "delete all"
         yield logAudit("DELETE", "BoxEntry", "all", `Deleted all ${countResult} entries`);
         // Also reset all customer sent counts to complete the fresh start
         const customerRepo = data_source_1.AppDataSource.getRepository(Customer_1.Customer);
-        yield customerRepo.update({}, { totalSentCount: 0 });
+        yield customerRepo.update({ id: (0, typeorm_1.Not)((0, typeorm_1.IsNull)()) }, { totalSentCount: 0 });
         yield logAudit("UPDATE", "Customer", "all", "Reset sent count for all customers after bulk entry deletion");
         res.json({ success: true, deletedCount: countResult });
     }
     catch (err) {
         console.error("Error deleting all entries:", err);
         res.status(500).json({ error: "Failed to delete entries", details: err.message });
+    }
+}));
+// ─── System Clear All Data ──────────────────────────────────
+app.post("/api/system/clear-all", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const queryRunner = data_source_1.AppDataSource.createQueryRunner();
+    yield queryRunner.connect();
+    yield queryRunner.startTransaction();
+    try {
+        const entryRepo = queryRunner.manager.getRepository(BoxEntry_1.BoxEntry);
+        const customerRepo = queryRunner.manager.getRepository(Customer_1.Customer);
+        const areaRepo = queryRunner.manager.getRepository(CustomerArea_1.CustomerArea);
+        const sourceRepo = queryRunner.manager.getRepository(InventorySource_1.InventorySource);
+        // Delete business records in order of dependencies (child first)
+        yield entryRepo.delete({ id: (0, typeorm_1.Not)((0, typeorm_1.IsNull)()) });
+        yield customerRepo.delete({ id: (0, typeorm_1.Not)((0, typeorm_1.IsNull)()) });
+        yield sourceRepo.delete({ id: (0, typeorm_1.Not)((0, typeorm_1.IsNull)()) });
+        yield areaRepo.delete({ id: (0, typeorm_1.Not)((0, typeorm_1.IsNull)()) });
+        yield logAudit("DELETE", "SYSTEM", "all", "Full system data clear (business records only)");
+        yield queryRunner.commitTransaction();
+        res.json({ success: true, message: "All business records have been cleared." });
+    }
+    catch (err) {
+        yield queryRunner.rollbackTransaction();
+        console.error("Error during full system clear:", err);
+        res.status(500).json({ error: "Failed to clear system data", details: err.message });
+    }
+    finally {
+        yield queryRunner.release();
+    }
+}));
+// ─── System Bulk Import ─────────────────────────────────────
+app.post("/api/system/import", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const { customers, sources, entries, areas, settings } = req.body;
+    const queryRunner = data_source_1.AppDataSource.createQueryRunner();
+    yield queryRunner.connect();
+    yield queryRunner.startTransaction();
+    try {
+        const customerRepo = queryRunner.manager.getRepository(Customer_1.Customer);
+        const sourceRepo = queryRunner.manager.getRepository(InventorySource_1.InventorySource);
+        const entryRepo = queryRunner.manager.getRepository(BoxEntry_1.BoxEntry);
+        const areaRepo = queryRunner.manager.getRepository(CustomerArea_1.CustomerArea);
+        const settingsRepo = queryRunner.manager.getRepository(AppSettings_1.AppSettings);
+        // 1. Restore Areas
+        if (areas && Array.isArray(areas)) {
+            for (const a of areas) {
+                let existing = yield areaRepo.findOneBy({ id: a.id });
+                if (existing)
+                    Object.assign(existing, a);
+                else
+                    existing = areaRepo.create(a);
+                yield areaRepo.save(existing);
+            }
+        }
+        // 2. Restore Varieties (InventorySources)
+        if (sources && Array.isArray(sources)) {
+            for (const s of sources) {
+                let existing = yield sourceRepo.findOneBy({ id: s.id });
+                if (existing)
+                    Object.assign(existing, s);
+                else
+                    existing = sourceRepo.create(s);
+                yield sourceRepo.save(existing);
+            }
+        }
+        // 3. Restore Customers
+        if (customers && Array.isArray(customers)) {
+            for (const c of customers) {
+                let existing = yield customerRepo.findOneBy({ id: c.id });
+                if (existing)
+                    Object.assign(existing, c);
+                else
+                    existing = customerRepo.create(c);
+                yield customerRepo.save(existing);
+            }
+        }
+        // 4. Restore Entries
+        if (entries && Array.isArray(entries)) {
+            for (const e of entries) {
+                let existing = yield entryRepo.findOneBy({ id: e.id });
+                if (existing)
+                    Object.assign(existing, e);
+                else
+                    existing = entryRepo.create(e);
+                yield entryRepo.save(existing);
+            }
+        }
+        // 5. Restore Settings
+        if (settings) {
+            let existing = yield settingsRepo.findOne({ where: {} });
+            if (existing) {
+                Object.assign(existing, settings);
+                yield settingsRepo.save(existing);
+            }
+            else {
+                const newSettings = settingsRepo.create(settings);
+                yield settingsRepo.save(newSettings);
+            }
+        }
+        yield logAudit("RESTORE", "SYSTEM", "all", "Bulk system data restore/import");
+        yield queryRunner.commitTransaction();
+        res.json({ success: true, message: "Data imported successfully." });
+    }
+    catch (err) {
+        yield queryRunner.rollbackTransaction();
+        console.error("Error during bulk import:", err);
+        res.status(500).json({ error: "Failed to import data", details: err.message });
+    }
+    finally {
+        yield queryRunner.release();
     }
 }));
 // ─── InventorySource Routes ──────────────────────────────────

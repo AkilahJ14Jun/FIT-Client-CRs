@@ -7,7 +7,7 @@ $ScriptPath = Join-Path $PSScriptRoot "ShareOnWhatsApp.ps1"
 
 # The command needs to be VERY robust to handle the full URI string with special characters
 # We use -WindowStyle Hidden to prevent the PowerShell console from flashing
-$Command = "`"$PowerShellPath`" -ExecutionPolicy Bypass -File `"$ScriptPath`" `"%1`""
+$Command = "`"$PowerShellPath`" -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$ScriptPath`" `"%1`""
 
 Write-Host "Registering protocol: $ProtocolName"
 Write-Host "Target Script: $ScriptPath"

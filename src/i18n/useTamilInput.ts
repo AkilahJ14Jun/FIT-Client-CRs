@@ -57,31 +57,31 @@ import { useTranslation } from './TranslationProvider';
 // ─── Vowel table ─────────────────────────────────────────────────────────────
 // Value: [standalone vowel character, vowel sign attached after a consonant]
 const VOWEL_MAP: Record<string, [string, string]> = {
-  'aa': ['ஆ', 'ா'],  'A':  ['ஆ', 'ா'],
-  'ii': ['ஈ', 'ீ'],  'I':  ['ஈ', 'ீ'],
-  'uu': ['ஊ', 'ூ'],  'U':  ['ஊ', 'ூ'],
-  'ee': ['ஏ', 'ே'],  'E':  ['ஏ', 'ே'],
-  'oo': ['ஓ', 'ோ'],  'O':  ['ஓ', 'ோ'],
-  'ai': ['ஐ', 'ை'],
-  'au': ['ஔ', 'ௌ'],
-  'a':  ['அ', ''],   // empty sign = consonant's inherent 'a' (no visible diacritic)
-  'i':  ['இ', 'ி'],
-  'u':  ['உ', 'ு'],
-  'e':  ['எ', 'ெ'],
-  'o':  ['ஒ', 'ொ'],
+  'aa': ['\u0B86', '\u0BBE'],  'A':  ['\u0B86', '\u0BBE'],
+  'ii': ['\u0B88', '\u0BC0'],  'I':  ['\u0B88', '\u0BC0'],
+  'uu': ['\u0B8A', '\u0BC2'],  'U':  ['\u0B8A', '\u0BC2'],
+  'ee': ['\u0B8F', '\u0BC7'],  'E':  ['\u0B8F', '\u0BC7'],
+  'oo': ['\u0B93', '\u0BCB'],  'O':  ['\u0B93', '\u0BCB'],
+  'ai': ['\u0B90', '\u0BC8'],
+  'au': ['\u0B94', '\u0BCC'],
+  'a':  ['\u0B85', ''],
+  'i':  ['\u0B87', '\u0BBF'],
+  'u':  ['\u0B89', '\u0BC1'],
+  'e':  ['\u0B8E', '\u0BC6'],
+  'o':  ['\u0B92', '\u0BCA'],
 };
 
 // ─── Consonant table ──────────────────────────────────────────────────────────
 const CONSONANT_MAP: Record<string, string> = {
-  // 2-char keys (must be checked before 1-char to avoid prefix clash)
-  'nj': 'ஞ', 'ng': 'ங', 'zh': 'ழ', 'sh': 'ஷ', 'ny': 'ஞ',
-  'ch': 'ச', 'th': 'த', 'ph': 'ப', 'kh': 'க', 'gh': 'க',
+  // 2-char keys
+  'nj': '\u0B9E', 'ng': '\u0B99', 'zh': '\u0BB4', 'sh': '\u0BB7', 'ny': '\u0B9E',
+  'ch': '\u0B9A', 'th': '\u0BA4', 'ph': '\u0BAA', 'kh': '\u0B95', 'gh': '\u0B95',
   // 1-char keys
-  'k': 'க',  'g': 'க',  'c': 'க',  's': 'ச',  'j': 'ஜ',
-  't': 'ட',  'd': 'ட',  'n': 'ந',  'N': 'ண',  'p': 'ப',
-  'b': 'ப',  'm': 'ம',  'y': 'ய',  'r': 'ர',  'R': 'ற',
-  'l': 'ல',  'L': 'ள',  'v': 'வ',  'w': 'வ',  'f': 'ப',
-  'h': 'ஹ',  'q': 'ஃ',  'x': 'ஃ',  'z': 'ழ',
+  'k': '\u0B95',  'g': '\u0B95',  'c': '\u0B95',  's': '\u0B9A',  'j': '\u0B9C',
+  't': '\u0B9F',  'd': '\u0B9F',  'n': '\u0BA8',  'N': '\u0BA3',  'p': '\u0BAA',
+  'b': '\u0BAA',  'm': '\u0BAE',  'y': '\u0BAF',  'r': '\u0BB0',  'R': '\u0BB1',
+  'l': '\u0BB2',  'L': '\u0BB3',  'v': '\u0BB5',  'w': '\u0BB5',  'f': '\u0BAA',
+  'h': '\u0BB9',  'q': '\u0B83',  'x': '\u0B83',  'z': '\u0BB4',
 };
 
 // All known 2-character token keys
@@ -90,7 +90,7 @@ const KEYS2 = new Set([
   'nj','ng','zh','sh','ny','ch','th','ph','kh','gh',          // 2-char consonants
 ]);
 
-const VIRAMA = '்'; // U+0BCD – Tamil virama (pulli ்)
+const VIRAMA = '\u0BCD'; // U+0BCD – Tamil virama (pulli ்)
 
 // Characters that could be the first char of a 2-char token
 const CAN_START_TWO = new Set<string>();
@@ -98,8 +98,9 @@ for (const k of KEYS2) CAN_START_TWO.add(k[0]);
 
 // ─── Per-field mutable state ──────────────────────────────────────────────────
 interface TranslitState {
-  buf: string;       // 0 or 1 Latin char buffered (lookahead)
-  lastBare: boolean; // true = last committed token was a vowel-less consonant
+  pending: string;    // The Latin char sequence for the current (possibly incomplete) token
+  pendingLen: number; // How many Unicode characters were added to the field for 'pending'
+  lastBare: boolean;  // True if the field ends in a vowel-less consonant
 }
 
 // ─── Token emitter ────────────────────────────────────────────────────────────
@@ -175,14 +176,10 @@ function flushBuffer(
   cursor: number,
   state: TranslitState,
 ): { value: string; cursor: number } {
-  if (state.buf) {
-    const first = state.buf;
-    state.buf = '';
-    const r = emitToken(first, value, cursor, state.lastBare);
-    state.lastBare = r.lastBare;
-    value  = r.value;
-    cursor = r.cursor;
-  }
+  // Clear pending state since a navigation key or blur has happened
+  state.pending = '';
+  state.pendingLen = 0;
+
   if (state.lastBare) {
     value  = value.slice(0, cursor) + VIRAMA + value.slice(cursor);
     cursor += VIRAMA.length;
@@ -205,57 +202,59 @@ function processChar(
   cursor: number,
   newChar: string,
   state: TranslitState,
-): { value: string; cursor: number } | { wait: true } | null {
-
+): { value: string; cursor: number } {
+  // ── Handle non-alpha ───────────────────────────────────────────────────────
   if (!/[a-zA-Z]/.test(newChar)) {
-    // Flush pending buffer before non-alpha character
-    if (state.buf) {
-      const first = state.buf;
-      state.buf = '';
-      const r = emitToken(first, value, cursor, state.lastBare);
-      state.lastBare = r.lastBare;
-      value  = r.value;
-      cursor = r.cursor;
+    let v = value;
+    let c = cursor;
+
+    // 1. Finalize with VIRAMA if word ends on a bare consonant
+    if (state.lastBare) {
+      v = v.slice(0, c) + VIRAMA + v.slice(c);
+      c += VIRAMA.length;
     }
+
+    // 2. Clear state and insert character
+    state.pending = '';
+    state.pendingLen = 0;
     state.lastBare = false;
-    return null; // caller inserts newChar normally
+
+    return { value: v.slice(0, c) + newChar + v.slice(c), cursor: c + newChar.length };
   }
 
-  // ── No buffered char ───────────────────────────────────────────────────────
-  if (state.buf.length === 0) {
-    if (CAN_START_TWO.has(newChar)) {
-      state.buf = newChar;
-      return { wait: true };
-    }
-    const r = emitToken(newChar, value, cursor, state.lastBare);
+  // ── Handle alpha ───────────────────────────────────────────────────────────
+  // A. Check for 2-char combination with the current pending char
+  const combo = state.pending + newChar;
+  if (KEYS2.has(combo)) {
+    // 1. Un-emit the last token (backspace the pending length)
+    const before = value.slice(0, cursor - state.pendingLen);
+    const after  = value.slice(cursor);
+    const baseValue = before + after;
+    const baseCursor = before.length;
+
+    // 2. Emit the 2-char token
+    // Note: since the 1-char version of the first part was already finalized
+    // in terms of 'lastBare' for its predecessor, we need to know the state
+    // BEFORE the first part was added. But in this simple lookahead,
+    // we can assume the previous state was correct.
+    const r = emitToken(combo, baseValue, baseCursor, state.lastBare);
+    
+    // 3. Complete and clear pending (no 3-char tokens exist)
+    state.pending = '';
+    state.pendingLen = 0;
     state.lastBare = r.lastBare;
     return { value: r.value, cursor: r.cursor };
   }
 
-  // ── One buffered char: try 2-char combo ────────────────────────────────────
-  const two = state.buf + newChar;
-  if (KEYS2.has(two)) {
-    state.buf = '';
-    const r = emitToken(two, value, cursor, state.lastBare);
-    state.lastBare = r.lastBare;
-    return { value: r.value, cursor: r.cursor };
-  }
-
-  // No 2-char match — emit the buffered char, then handle newChar fresh
-  const first = state.buf;
-  state.buf = '';
-  const r1 = emitToken(first, value, cursor, state.lastBare);
-  state.lastBare = r1.lastBare;
-  value  = r1.value;
-  cursor = r1.cursor;
-
-  if (CAN_START_TWO.has(newChar)) {
-    state.buf = newChar;
-    return { wait: true };
-  }
-  const r2 = emitToken(newChar, value, cursor, state.lastBare);
-  state.lastBare = r2.lastBare;
-  return { value: r2.value, cursor: r2.cursor };
+  // B. Else: Emit newChar as a 1-char token
+  // If there was a pending char, it is now "permanent" as its 1-char form
+  state.pending = newChar;
+  const oldLen = value.length;
+  const r = emitToken(newChar, value, cursor, state.lastBare);
+  state.pendingLen = r.value.length - oldLen;
+  state.lastBare = r.lastBare;
+  
+  return { value: r.value, cursor: r.cursor };
 }
 
 // ─── React hook ───────────────────────────────────────────────────────────────
@@ -305,20 +304,6 @@ export function useTamilInput() {
       }
 
       const result = processChar(currentValue, start, data, stateRef.current);
-
-      if (result === null) {
-        // Non-alpha: insert as-is after flushed buffer
-        const newVal = currentValue.slice(0, start) + data + currentValue.slice(start);
-        applyValueNative(input, newVal, start + 1);
-        return;
-      }
-
-      if ('wait' in result) {
-        // Buffer accumulating — collapse any selection but don't insert yet
-        if (start !== end) applyValueNative(input, currentValue, start);
-        return;
-      }
-
       applyValueNative(input, result.value, result.cursor);
     },
     [lang],
@@ -350,7 +335,7 @@ export function useTamilInput() {
           );
         });
       }
-      stateRef.current = { buf: '', lastBare: false };
+      stateRef.current = { pending: '', pendingLen: 0, lastBare: false };
     },
     [lang],
   );

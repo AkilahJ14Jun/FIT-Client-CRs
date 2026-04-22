@@ -4,7 +4,7 @@ import {
   Shield, Building2, FileText, AlertTriangle, CheckCircle, Clock,
   Bell, BellOff, Globe, Users, UserPlus, Key, UserMinus
 } from 'lucide-react';
-import { SettingsDB, BackupDB, AuditDB, StockAlertDB, CustomerDB, type AppSettings, type AuditLog, type Customer } from '../db/database';
+import { SettingsDB, BackupDB, AuditDB, StockAlertDB, CustomerDB, SourceDB, type AppSettings, type AuditLog, type Customer, type InventorySource } from '../db/database';
 import { useTranslation } from '../i18n/TranslationProvider';
 import { useAuth } from '../auth/AuthContext';
 import { Button } from '../components/ui/Button';
@@ -64,19 +64,27 @@ export const Settings: React.FC = () => {
   const [userFormError, setUserFormError] = useState('');
   const [userFormSuccess, setUserFormSuccess] = useState('');
 
+  // Variety stock threshold state
+  const [varieties, setVarieties] = useState<InventorySource[]>([]);
+  const [selectedVarietyId, setSelectedVarietyId] = useState('');
+  const [varietyThreshold, setVarietyThreshold] = useState<string>('0');
+  const [varietySaved, setVarietySaved] = useState(false);
+
   const reloadAll = useCallback(async () => {
-    const [s, sl, dismissed, al, custs] = await Promise.all([
+    const [s, sl, dismissed, al, custs, vars] = await Promise.all([
       SettingsDB.get(),
       StockAlertDB.getStockLevel(),
       StockAlertDB.isDismissed(),
       AuditDB.getAll(),
       CustomerDB.getAll(),
+      SourceDB.getAll(),
     ]);
     setSettings(s);
     setStockLevel(sl);
     setAlertDismissed(dismissed);
     setAuditLogs(al);
     setSentCountCustomers(custs);
+    setVarieties(vars.filter(v => v.isActive !== false));
   }, []);
 
   const loadUsers = useCallback(async () => {
@@ -96,42 +104,15 @@ export const Settings: React.FC = () => {
     setTimeout(() => setSaved(false), 3000);
   };
 
-  const handleExport = async () => {
-    await BackupDB.exportJSON();
-  };
-
-  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      const json = ev.target?.result as string;
-      try {
-        const data = JSON.parse(json);
-        // Import each entity
-        if (data.customers) {
-          for (const c of data.customers) { await fetch(`/api/customers/${c.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(c) }).catch(() => fetch('/api/customers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(c) })); }
-        }
-        if (data.sources) {
-          for (const s of data.sources) { await fetch(`/api/sources/${s.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(s) }).catch(() => fetch('/api/sources', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(s) })); }
-        }
-        if (data.entries) {
-          for (const entry of data.entries) { await fetch(`/api/entries/${entry.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(entry) }).catch(() => fetch('/api/entries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(entry) })); }
-        }
-        if (data.settings) { await SettingsDB.save(data.settings); }
-        setImportResult({ success: true, message: t('settings.importSuccess') });
-        await reloadAll();
-      } catch (err) {
-        setImportResult({ success: false, message: `${t('settings.importFail')} ${(err as Error).message}` });
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = '';
-  };
-
-  const handleClearAll = () => {
-    // For MySQL backend, we'd need a special clear endpoint. For now reload.
-    window.location.reload();
+  const handleUpdateVarietyThreshold = async () => {
+    if (!selectedVarietyId) return;
+    const thresh = parseInt(varietyThreshold) || 0;
+    if (thresh < 0) return;
+    
+    await SourceDB.update(selectedVarietyId, { stockThreshold: thresh });
+    setVarietySaved(true);
+    await reloadAll();
+    setTimeout(() => setVarietySaved(false), 3000);
   };
 
   const handleReEnableAlert = async () => {
@@ -297,22 +278,17 @@ export const Settings: React.FC = () => {
     { id: 'company', label: t('settings.companyTab'), icon: <Building2 size={16} /> },
     { id: 'stock',   label: t('settings.stockTab'),      icon: <Bell size={16} />      },
     { id: 'users',   label: t('settings.usersTab'),      icon: <Users size={16} />     },
-    { id: 'backup',  label: t('settings.backupTab'),     icon: <Download size={16} />  },
     { id: 'audit',   label: t('settings.auditTab'),      icon: <Shield size={16} />    },
     { id: 'sentCount', label: t('settings.sentTab'), icon: <RotateCcw size={16} /> },
   ];
 
   const TABS = ALL_TABS.filter(
-    (t) => (t.id !== 'backup' && t.id !== 'users' && t.id !== 'sentCount') ||
-           (t.id === 'backup' && user?.isSystemAdmin === true) ||
+    (t) => (t.id !== 'users' && t.id !== 'sentCount') ||
            (t.id === 'users' && canManageUsers) ||
            (t.id === 'sentCount' && user?.isSystemAdmin === true)
   );
 
   // Redirect away from restricted tabs if user loses access
-  useEffect(() => {
-    if (tab === 'backup' && user?.isSystemAdmin !== true) setTab('company');
-  }, [tab, user]);
 
   useEffect(() => {
     if (tab === 'users' && !canManageUsers) setTab('company');
@@ -387,35 +363,99 @@ export const Settings: React.FC = () => {
         <div className="space-y-4">
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
             <div className="flex items-center gap-3 mb-4">
-              <div className={`rounded-xl p-2 ${settings.stockAlertEnabled ? 'bg-amber-50 text-amber-700' : 'bg-gray-100 text-gray-400'}`}>
-                {settings.stockAlertEnabled ? <Bell size={20} /> : <BellOff size={20} />}
-              </div>
-              <div><h3 className="font-semibold text-gray-800">{t('settings.stockEnabled')}</h3><p className="text-xs text-gray-500">{t('settings.stockSub')}</p></div>
+              <div className="bg-blue-50 rounded-xl p-2 text-blue-700"><Bell size={20} /></div>
+              <div><h3 className="font-semibold text-gray-800">{t('settings.stockTab')}</h3><p className="text-xs text-gray-500">Configure system-wide stock alerts</p></div>
             </div>
-            <label className="flex items-center gap-3 cursor-pointer select-none mb-6">
-              <div onClick={() => setSettings((s) => ({ ...s, stockAlertEnabled: !s.stockAlertEnabled }))}
-                className={`relative w-12 h-6 rounded-full transition-colors duration-200 ${settings.stockAlertEnabled ? 'bg-amber-500' : 'bg-gray-300'}`}>
-                <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${settings.stockAlertEnabled ? 'translate-x-6' : 'translate-x-0'}`} />
-              </div>
-              <span className="text-sm font-medium text-gray-700">{settings.stockAlertEnabled ? t('settings.alertOn') : t('settings.alertOff')}</span>
-            </label>
-            <div className="space-y-3">
-              <label className="text-sm font-medium text-gray-700">{t('settings.alertThreshold')} — <span className="text-amber-600 font-bold">{settings.stockAlertThreshold ?? 30}%</span></label>
-              <p className="text-xs text-gray-500">{t('settings.thresholdDesc')}</p>
-              <input type="range" min={5} max={80} step={5} value={settings.stockAlertThreshold ?? 30}
-                onChange={(e) => setSettings((s) => ({ ...s, stockAlertThreshold: parseInt(e.target.value) }))}
-                className="w-full accent-amber-500" disabled={!settings.stockAlertEnabled} />
-              <div className="flex justify-between text-[10px] text-gray-400"><span>5% (Critical only)</span><span>30% (Recommended)</span><span>80% (Early warning)</span></div>
-              <div className="mt-3 h-4 bg-gray-100 rounded-full overflow-hidden relative">
-                <div className="h-full bg-gradient-to-r from-red-500 via-amber-400 to-emerald-400 rounded-full" style={{ width: '100%' }} />
-                <div className="absolute top-0 h-full w-0.5 bg-gray-800" style={{ left: `${settings.stockAlertThreshold ?? 30}%` }} />
-                <div className="absolute -top-6 text-[9px] text-gray-600 font-bold -translate-x-1/2" style={{ left: `${settings.stockAlertThreshold ?? 30}%` }}>▼ {t('settings.alertThreshold')} {settings.stockAlertThreshold ?? 30}%</div>
+
+            <div className="flex items-center gap-3 mb-6">
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" checked={settings.stockAlertEnabled} onChange={(e) => setSettings((s) => ({ ...s, stockAlertEnabled: e.target.checked }))} className="sr-only peer" />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                <span className="ml-3 text-sm font-medium text-gray-700">{t('settings.enableAlerts')}</span>
+              </label>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-1 block">Global Alert Threshold (Boxes)</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={settings.stockAlertThresholdCount}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^0-9]/g, '');
+                      setSettings(s => ({ ...s, stockAlertThresholdCount: parseInt(val) || 0 }));
+                    }}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    placeholder="Enter box count (e.g. 50)"
+                  />
+                  <Button icon={<Save size={16} />} onClick={handleSave}>
+                    {t('common.save')}
+                  </Button>
+                </div>
+                <p className="text-[10px] text-gray-400 mt-1">System will alert if total boxes drop below this count.</p>
               </div>
             </div>
-            <div className="mt-6 flex items-center gap-3 flex-wrap">
-              <Button icon={<Save size={16} />} onClick={handleSave}>{t('settings.saveAlert')}</Button>
-              {saved && (<span className="flex items-center gap-1.5 text-sm text-emerald-700"><CheckCircle size={16} /> {t('settings.saved')}</span>)}
+            {saved && tab === 'stock' && (
+              <div className="mt-3 flex items-center gap-1.5 text-sm text-emerald-700">
+                <CheckCircle size={16} /> Saved global threshold
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="bg-amber-50 rounded-xl p-2 text-amber-700"><AlertTriangle size={20} /></div>
+              <div><h3 className="font-semibold text-gray-800">Variety Specific Alerts</h3><p className="text-xs text-gray-500">Set alert thresholds for each fish variety</p></div>
             </div>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-1 block">{t('dispatch.invSource')}</label>
+                <select
+                  value={selectedVarietyId}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    setSelectedVarietyId(id);
+                    const v = varieties.find(x => x.id === id);
+                    setVarietyThreshold(v ? v.stockThreshold.toString() : '0');
+                  }}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                >
+                  <option value="">Select a variety</option>
+                  {varieties.map(v => (
+                    <option key={v.id} value={v.id}>{v.sourceName}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="text-sm font-medium text-gray-700 mb-1 block">{t('src.boxThreshold')}</label>
+                  <input
+                    type="text"
+                    value={varietyThreshold}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^0-9]/g, '');
+                      setVarietyThreshold(val);
+                    }}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    placeholder="Enter box count"
+                  />
+                </div>
+                <Button 
+                  icon={<Save size={16} />} 
+                  onClick={handleUpdateVarietyThreshold}
+                  disabled={!selectedVarietyId}
+                >
+                  {t('common.save')}
+                </Button>
+              </div>
+            </div>
+            {varietySaved && (
+              <div className="mt-3 flex items-center gap-1.5 text-sm text-emerald-700">
+                <CheckCircle size={16} /> Saved threshold for variety
+              </div>
+            )}
           </div>
 
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
@@ -450,41 +490,6 @@ export const Settings: React.FC = () => {
               )}
             </div>
           </div>
-        </div>
-      )}
-
-      {/* ── Backup & Restore ── */}
-      {tab === 'backup' && (
-        <div className="space-y-4">
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-            <div className="flex items-center gap-3 mb-4"><div className="bg-blue-50 rounded-xl p-2 text-blue-800"><Download size={20} /></div><div><h3 className="font-semibold text-gray-800">{t('settings.exportBackup')}</h3><p className="text-xs text-gray-500">{t('settings.exportSub')}</p></div></div>
-            <p className="text-sm text-gray-600 mb-4">{t('settings.exportDesc')}</p>
-            {settings.lastBackup && (<p className="text-xs text-gray-400 mb-3">{t('settings.lastBackup')} {format(new Date(settings.lastBackup), 'dd MMM yyyy, HH:mm')}</p>)}
-            <Button icon={<Download size={16} />} onClick={handleExport}>{t('settings.download')}</Button>
-          </div>
-
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-            <div className="flex items-center gap-3 mb-4"><div className="bg-emerald-50 rounded-xl p-2 text-emerald-700"><Upload size={20} /></div><div><h3 className="font-semibold text-gray-800">{t('settings.restore')}</h3><p className="text-xs text-gray-500">{t('settings.restoreSub')}</p></div></div>
-            <p className="text-sm text-gray-600 mb-4">{t('settings.exportDesc')}</p>
-            {importResult && (
-              <div className={`mb-4 p-3 rounded-lg text-sm flex items-center gap-2 ${importResult.success ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'}`}>
-                {importResult.success ? <CheckCircle size={16} /> : <AlertTriangle size={16} />}
-                {importResult.message}
-              </div>
-            )}
-            <input ref={fileRef} type="file" accept=".json" onChange={handleImport} className="hidden" />
-            <Button variant="secondary" icon={<Upload size={16} />} onClick={() => fileRef.current?.click()}>{t('settings.chooseFile')}</Button>
-          </div>
-
-          <div className="bg-white rounded-2xl border border-red-100 shadow-sm p-6">
-            <div className="flex items-center gap-3 mb-4"><div className="bg-red-50 rounded-xl p-2 text-red-700"><Trash2 size={20} /></div><div><h3 className="font-semibold text-red-700">{t('settings.danger')}</h3><p className="text-xs text-gray-500">{t('settings.dangerSub')}</p></div></div>
-            <p className="text-sm text-gray-600 mb-4">{t('settings.clearWarn')} <strong className="text-red-600">{t('settings.exportBefore')}</strong></p>
-            <Button variant="danger" icon={<AlertTriangle size={16} />} onClick={() => setClearConfirm(true)}>{t('settings.clearAll')}</Button>
-          </div>
-
-          <ConfirmModal open={clearConfirm} onClose={() => setClearConfirm(false)} onConfirm={handleClearAll}
-            title={t('settings.clearTitle')} message={t('settings.clearMsg')}
-            confirmLabel={t('settings.clearConfirm')} variant="danger" />
         </div>
       )}
 

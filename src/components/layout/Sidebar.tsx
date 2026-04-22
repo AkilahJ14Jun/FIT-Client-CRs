@@ -20,8 +20,8 @@ const NAV_KEYS_BASE = [
   { to: '/reports', labelKey: 'sidebar.reports', icon: BarChart3, group: 'main' },
   { to: '/settings', labelKey: 'sidebar.settings', icon: Settings, group: 'system' },
   { to: '/admin-data', labelKey: 'sidebar.adminData', icon: ShieldCheck, group: 'system', adminOnly: true },
-  { to: '/architecture', labelKey: 'sidebar.architecture', icon: Layers, group: 'docs' },
-  { to: '/guide', labelKey: 'sidebar.guide', icon: BookOpen, group: 'docs' },
+  { to: '/architecture', labelKey: 'sidebar.architecture', icon: Layers, group: 'docs', adminOnly: true },
+  { to: '/guide', labelKey: 'sidebar.guide', icon: BookOpen, group: 'docs', adminOnly: true },
   { to: '/mobile', labelKey: 'sidebar.mobileAccess', icon: Smartphone, group: 'docs', hidden: true },
 ];
 

@@ -105,82 +105,103 @@ public class Win32 {
     }
 }
 "@
-if (-not ([System.Management.Automation.PSTypeName]'Win32').Type) { Add-Type -TypeDefinition $Win32Code }
+if (-not ([System.Management.Automation.PSTypeName]'Win32').Type) { 
+    Add-Type -TypeDefinition $Win32Code -ErrorAction SilentlyContinue 
+}
 
 function Activate-WhatsApp {
     Log-Msg "Searching for WhatsApp window..."
-    for ($i = 0; $i -lt 20; $i++) {
-        # BETTER FILTERING: Focus on windows that look like real WhatsApp tabs
-        # Ignore results like "Google Search" or "Bing"
+    for ($i = 0; $i -lt 25; $i++) {
+        # Search for windows containing "WhatsApp" anywhere in the title
         $windows = [Win32]::FindWindows("WhatsApp") | Where-Object { 
             $t = (New-Object System.Text.StringBuilder(512)); 
             [Win32]::GetWindowText($_, $t, 512) | Out-Null; 
             $title = $t.ToString().ToLower();
-            ($title -match "whatsapp") -and (-not ($title -match "search|google|bing"))
+            # Match WhatsApp but exclude search engine results and other common false positives
+            ($title -match "whatsapp") -and (-not ($title -match "search|google|bing|yahoo|duckduckgo"))
         }
 
         if ($windows.Count -gt 0) {
             $hWnd = $windows[0]
-            if ([Win32]::IsIconic($hWnd)) {
-                [Win32]::ShowWindow($hWnd, 3) # SW_MAXIMIZE (Forced)
-            } else {
-                [Win32]::ShowWindow($hWnd, 3) # SW_MAXIMIZE (Forced)
-            }
+            # SW_RESTORE (9) or SW_SHOW (5) before SetForegroundWindow is often more reliable
+            [Win32]::ShowWindow($hWnd, 9) 
+            Start-Sleep -Milliseconds 200
+            [Win32]::ShowWindow($hWnd, 3) # SW_MAXIMIZE
             [Win32]::SetForegroundWindow($hWnd)
-            Log-Msg "WhatsApp window activated successfully."
-            return $true
+            Log-Msg "WhatsApp window found and activated."
+            return $hWnd
         }
+        
+        # Only launch browser on the very first try if absolutely nothing found
         if ($i -eq 0) { 
-            Log-Msg "WhatsApp not found. Launching browser..."
-            Start-Process "explorer.exe" $WhatsAppUrl 
+            Log-Msg "Initial search failed. Launching browser/app..."
+            Start-Process $WhatsAppUrl 
+            Start-Sleep -Seconds 3 # Give it a moment to actually open the process
         }
         Start-Sleep -Seconds 1
-        Log-Msg "Waiting for WhatsApp window to appear... ($($i+1)/20)"
+        Log-Msg "Waiting for WhatsApp window to appear... ($($i+1)/25)"
     }
-    return $false
+    return $null
 }
 
-if (-not (Activate-WhatsApp)) {
-    Log-Msg "ERROR: Could not activate WhatsApp window after 20 seconds."
+$targetHWnd = Activate-WhatsApp
+if (-not $targetHWnd) {
+    Log-Msg "ERROR: Could not activate WhatsApp window after 25 seconds."
     exit
 }
 
 # --- 3. Share Sequence (Robust Mode) ---
 Log-Msg "Preparing clipboard..."
 try {
+    # Ensure STA mode for clipboard (PowerShell 5.1 default, but safety first)
     $fileList = New-Object System.Collections.Specialized.StringCollection
     $fileList.Add($DestPath)
     $dataObj = New-Object System.Windows.Forms.DataObject
     $dataObj.SetFileDropList($fileList)
+    [System.Windows.Forms.Clipboard]::Clear()
+    Start-Sleep -Milliseconds 200
     [System.Windows.Forms.Clipboard]::SetDataObject($dataObj, $true)
-    Log-Msg "File put on clipboard."
+    Log-Msg "File put on clipboard successfully."
 } catch {
-    Log-Msg "WARNING: Could not access clipboard: $_"
+    Log-Msg "ERROR: Clipboard access failed: $_"
+    exit
 }
 
 Log-Msg "Starting chat search & paste sequence..."
-Start-Sleep -Milliseconds 800
+# Re-focus just in case we lost it during clipboard setup
+[Win32]::SetForegroundWindow($targetHWnd)
+Start-Sleep -Milliseconds 1000
 
-# Step A: Focus the Search Bar (Ctrl+Alt+/)
-# This ensures we switch to the right contact even if another chat was open.
-Send-Key "^%/" 
+# Step A: Focus & Clear the Search Bar
+Send-Key "{ESC}" 
+Start-Sleep -Milliseconds 500
+Send-Key "^%/" # Ctrl+Alt+/ (WhatsApp Web Search)
 Start-Sleep -Milliseconds 800
+Send-Key "^a{BACKSPACE}" # Clear any existing search text
+Start-Sleep -Milliseconds 300
 
 # Step B: Type phone number and Enter to switch chat
-Send-Key "$Phone"
-Start-Sleep -Milliseconds 1200
+$cleanPhone = $Phone.TrimStart('+')
+$escapedPhone = $cleanPhone -replace '([\+\^%\~(){}\[\]])', '{$1}'
+Log-Msg "Typing phone: $cleanPhone"
+Send-Key "$escapedPhone"
+Start-Sleep -Milliseconds 1500 # Wait for search results to filter
 Send-Key "{ENTER}"
-Log-Msg "Chat switch triggered for $Phone"
-Start-Sleep -Milliseconds 1500
+Log-Msg "Chat switch triggered."
+Start-Sleep -Milliseconds 2500 # CRITICAL: Wait for chat window to LOAD and FOCUS input box!
+
+# Final re-focus check before pasting
+[Win32]::SetForegroundWindow($targetHWnd)
+Start-Sleep -Milliseconds 200
 
 # Step C: Paste the file (Ctrl+V)
 Log-Msg "Pasting file..."
 Send-Key "^v"
-Start-Sleep -Milliseconds 2500 # Wait for attachment preview to appear
+Start-Sleep -Milliseconds 3500 # Wait for attachment preview to appear (can be slow for PDFs)
 
 # Step D: Send (Enter)
+Log-Msg "Sending..."
 Send-Key "{ENTER}"
 Log-Msg "DONE (Multi-Stage)."
 
 Start-Sleep -Seconds 2
-

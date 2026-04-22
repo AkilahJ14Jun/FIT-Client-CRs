@@ -1,8 +1,8 @@
 REM Change drive
-g:
+e:
 
 REM Change to front-end location
-cd G:\bobby\GitHub\FIT Client CRs
+cd e:\FIT
 
 @echo off
 start http://localhost:3001

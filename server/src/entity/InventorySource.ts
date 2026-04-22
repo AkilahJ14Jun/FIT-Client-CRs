@@ -8,13 +8,13 @@ export class InventorySource {
   @Column()
   sourceName!: string;
 
-  @Column()
+  @Column({ nullable: true })
   contactPerson!: string;
 
-  @Column()
+  @Column({ nullable: true })
   mobile!: string;
 
-  @Column()
+  @Column({ nullable: true })
   address!: string;
 
   @Column({ type: "text", nullable: true })
@@ -22,6 +22,9 @@ export class InventorySource {
 
   @Column({ default: true })
   isActive!: boolean;
+
+  @Column({ default: 0 })
+  stockThreshold!: number;
 
   @CreateDateColumn()
   createdAt!: Date;

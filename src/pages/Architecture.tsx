@@ -100,7 +100,7 @@ export const Architecture: React.FC = () => {
               <div className="bg-white/10 rounded-xl p-4 mb-4 border border-white/20">
                 <p className="text-xs text-blue-300 uppercase tracking-widest mb-3 text-center">Application Modules</p>
                 <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                  {['Dashboard', 'Customers', 'Sources', 'Box Entries', 'Reports', 'Settings'].map((m) => (
+                  {['Dashboard', 'Customers', 'Varieties', 'Box Entries', 'Reports', 'Settings'].map((m) => (
                     <div key={m} className="bg-cyan-500/20 rounded-lg p-2 text-center">
                       <p className="text-xs">{m}</p>
                     </div>
@@ -180,11 +180,11 @@ export const Architecture: React.FC = () => {
                 },
                 {
                   icon: <Database size={20} />,
-                  name: 'Inventory Source Module',
+                  name: 'Fish Variety Module',
                   path: 'src/pages/Sources.tsx',
                   color: 'bg-emerald-50 text-emerald-700',
-                  desc: 'Manages all box supply sources including fishing harbours and third-party suppliers.',
-                  features: ['Add / Edit / Delete sources', 'Contact person & mobile', 'Active / Inactive toggle', 'Used as dropdown in Box Entry'],
+                  desc: 'Manages all fish varieties handled by the business, including individual classification.',
+                  features: ['Add / Edit / Delete varieties', 'Contact person & mobile', 'Active / Inactive toggle', 'Used as dropdown in Box Entry'],
                 },
                 {
                   icon: <Package size={20} />,
@@ -263,7 +263,7 @@ export const Architecture: React.FC = () => {
                   <tbody className="divide-y divide-gray-100">
                     {[
                       { key: 'customer', entity: 'Customer', desc: 'Customer master — name, shop, mobile, email, address' },
-                      { key: 'inventory_source', entity: 'InventorySource', desc: 'Box supply sources — harbour, contact, mobile' },
+                      { key: 'inventory_source', entity: 'InventorySource', desc: 'Fish Varieties — type, contact, mobile' },
                       { key: 'box_entry', entity: 'BoxEntry', desc: 'All box movements — dispatch, return, balance, external' },
                       { key: 'app_settings', entity: 'AppSettings', desc: 'Company info, bill prefix, backup config' },
                       { key: 'audit_log', entity: 'AuditLog', desc: 'Change tracking — action, entity, summary, timestamp' },
@@ -300,7 +300,7 @@ export const Architecture: React.FC = () => {
                     { field: 'driverName', type: 'string', desc: 'Delivery driver name' },
                     { field: 'vehicleNumber', type: 'string', desc: 'Vehicle registration number' },
                     { field: 'isExternalSource', type: 'boolean', desc: 'Flag for third-party source boxes' },
-                    { field: 'sourceId', type: 'UUID ref?', desc: 'Optional FK → InventorySource.id' },
+                    { field: 'sourceId', type: 'UUID ref?', desc: 'Optional FK → FishVariety (stored as InventorySource)' },
                     { field: 'externalBoxCount', type: 'number?', desc: 'Count of external source boxes' },
                   ],
                 },

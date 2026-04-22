@@ -75,6 +75,10 @@ __decorate([
     __metadata("design:type", Number)
 ], AppSettings.prototype, "stockAlertThreshold", void 0);
 __decorate([
+    (0, typeorm_1.Column)("int", { default: 50 }),
+    __metadata("design:type", Number)
+], AppSettings.prototype, "stockAlertThresholdCount", void 0);
+__decorate([
     (0, typeorm_1.Column)({ default: 'en' }),
     __metadata("design:type", String)
 ], AppSettings.prototype, "language", void 0);

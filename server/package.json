@@ -6,7 +6,8 @@
   "scripts": {
     "start": "ts-node src/index.ts",
     "dev": "nodemon src/index.ts",
-    "build": "tsc"
+    "build": "tsc",
+    "serve": "node dist/index.js"
   },
   "dependencies": {
     "@types/bcryptjs": "^3.0.0",

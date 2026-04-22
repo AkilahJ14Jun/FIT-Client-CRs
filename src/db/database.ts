@@ -39,6 +39,7 @@ export interface InventorySource {
   address: string;
   notes: string;
   isActive: boolean;
+  stockThreshold: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -91,6 +92,7 @@ export interface AppSettings {
   theme: 'light' | 'dark';
   stockAlertEnabled: boolean;
   stockAlertThreshold: number;
+  stockAlertThresholdCount: number;
   stockAlertDismissedUntil?: string;
   language: 'en' | 'ta' | 'hi';
 }
@@ -120,6 +122,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   theme: 'light',
   stockAlertEnabled: true,
   stockAlertThreshold: 30,
+  stockAlertThresholdCount: 50,
   language: 'en',
 };
 
@@ -228,6 +231,53 @@ export const CustomerDB = {
   async deleteAllEntries(): Promise<{ success: boolean; deletedCount?: number }> {
     return apiFetch('/entries/delete-all', { method: 'POST' });
   },
+  /** Calculates cumulative balance and variety-level totals for a customer.
+   *  Optionally excludes a specific bill (useful for 'Already Sent' calculation in Edit mode).
+   */
+  async getHistorySummary(customerId: string, excludeBillNumber?: string): Promise<{
+    cumulativeBalance: number;
+    varietyTotals: Record<string, number>;
+  }> {
+    const allEntries = await apiFetch<BoxEntry[]>('/entries');
+    const customerEntries = allEntries
+      .filter(e => e.customerId === customerId && e.billNumber !== excludeBillNumber)
+      .sort((a, b) => a.entryDate.localeCompare(b.entryDate));
+
+    let cumulativeBalance = 0;
+    const varietyTotals: Record<string, number> = {};
+
+    for (const e of customerEntries) {
+      if (e.entryType === 'dispatch' || e.entryType === 'opening_balance') {
+        const todaySent = e.currentQuantity || 0;
+        cumulativeBalance += todaySent;
+
+        if (e.openingStockSources) {
+          for (const s of e.openingStockSources) {
+            varietyTotals[s.sourceId] = (varietyTotals[s.sourceId] || 0) + s.quantity;
+          }
+        } else if (e.isExternalSource && e.sourceId) {
+          // Legacy single-variety dispatch
+          varietyTotals[e.sourceId] = (varietyTotals[e.sourceId] || 0) + (e.externalBoxCount || 0);
+        }
+      } else if (e.entryType === 'return') {
+        const returned = e.boxesReturned || 0;
+        cumulativeBalance -= returned;
+        
+        // If variety-specific returns are supported
+        if (e.openingStockSources) {
+          for (const s of e.openingStockSources) {
+            varietyTotals[s.sourceId] = (varietyTotals[s.sourceId] || 0) - s.quantity;
+          }
+        } else {
+          // Simple return: proportionally deduct from variety totals if possible?
+          // For now, we assume simple return reduces general balance.
+          // In a truly variety-centric system, returns should specify varieties.
+        }
+      }
+    }
+
+    return { cumulativeBalance, varietyTotals };
+  }
 };
 
 // ─── Source DB ────────────────────────────────────────────────────────────────
@@ -247,10 +297,10 @@ export const SourceDB = {
       return undefined;
     }
   },
-  async create(data: Omit<InventorySource, 'id' | 'createdAt' | 'updatedAt' | 'isActive'>): Promise<InventorySource> {
+  async create(data: Omit<InventorySource, 'id' | 'createdAt' | 'updatedAt' | 'isActive' | 'stockThreshold'>): Promise<InventorySource> {
     return apiFetch<InventorySource>('/sources', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify({ ...data, stockThreshold: 0 }),
     });
   },
   async update(id: string, data: Partial<Omit<InventorySource, 'id' | 'createdAt'>>): Promise<InventorySource | null> {
@@ -398,36 +448,56 @@ export const EntryDB = {
 
     const liveCompanyQty = Math.max(0, (ob?.companyOwnQuantity ?? 0) - ownDispatched + ownReturned);
 
-    // Get all active sources to ensure ALL are shown in summary, even if
-    // they were never part of a stock position entry
+    // Get all active sources to ensure ALL are shown in summary
     const allSources = await SourceDB.getAll();
     const liveSources: Array<{ sourceId: string; sourceName: string; quantity: number }> = [];
 
-    // Start with sources defined in the latest stock position, with their
-    // original quantity minus external dispatches
+    // Calculate deductions for each variety
     const seenSourceIds = new Set<string>();
     for (const src of obSources) {
-      const srcDispatched = all
-        .filter((e) => e.entryType === 'dispatch' && e.isExternalSource && e.sourceId === src.sourceId)
-        .reduce((s, e) => s + (e.externalBoxCount || 0), 0);
+      // Find all dispatches and returns that affected this specific variety
+      const srcNetDispatched = all.reduce((net, e) => {
+        if (e.entryType === 'opening_balance') return net; // Skip other OBs
+        
+        // Check for specific variety in openingStockSources (multi-row mode)
+        const rowQty = e.openingStockSources?.find(ss => ss.sourceId === src.sourceId)?.quantity || 0;
+        
+        // Handle legacy single-variety field
+        const legacyQty = (e.isExternalSource && e.sourceId === src.sourceId) ? (e.externalBoxCount || 0) : 0;
+        
+        const change = Math.max(rowQty, legacyQty);
+        
+        if (e.entryType === 'dispatch') return net + change;
+        if (e.entryType === 'return')   return net - change; // Currently returns are assumed company-owned, but handling variety returns if present
+        return net;
+      }, 0);
+
       liveSources.push({
         sourceId: src.sourceId,
         sourceName: src.sourceName,
-        quantity: Math.max(0, src.quantity - srcDispatched),
+        quantity: Math.max(0, src.quantity - srcNetDispatched),
       });
       seenSourceIds.add(src.sourceId);
     }
 
-    // Append any active sources NOT in the stock position (newly added ones)
+    // Append any active sources NOT in the stock position
     for (const src of allSources) {
       if (!src.isActive || seenSourceIds.has(src.id)) continue;
-      const srcDispatched = all
-        .filter((e) => e.entryType === 'dispatch' && e.isExternalSource && e.sourceId === src.id)
-        .reduce((s, e) => s + (e.externalBoxCount || 0), 0);
+      const srcNetDispatched = all.reduce((net, e) => {
+        if (e.entryType === 'opening_balance') return net;
+        const rowQty = e.openingStockSources?.find(ss => ss.sourceId === src.id)?.quantity || 0;
+        const legacyQty = (e.isExternalSource && e.sourceId === src.id) ? (e.externalBoxCount || 0) : 0;
+        const change = Math.max(rowQty, legacyQty);
+        
+        if (e.entryType === 'dispatch') return net + change;
+        if (e.entryType === 'return')   return net - change;
+        return net;
+      }, 0);
+
       liveSources.push({
         sourceId: src.id,
         sourceName: src.sourceName,
-        quantity: Math.max(0, -srcDispatched),
+        quantity: Math.max(0, -srcNetDispatched),
       });
     }
 
@@ -444,7 +514,7 @@ export const EntryDB = {
   async updateStockPositionAfterEntry(savedEntry: BoxEntry): Promise<void> {
     const all = await this.getAll();
     const obEntries = all
-      .filter((e) => e.entryType === 'opening_balance')
+      .filter((e) => e.entryType === 'opening_balance' && /^\d+$/.test(e.billNumber))
       .sort((a, b) => b.entryDate.localeCompare(a.entryDate));
     const ob = obEntries[0];
     if (!ob) return; // No stock position to update
@@ -453,8 +523,17 @@ export const EntryDB = {
     let newSources    = (ob.openingStockSources ?? []).map((s) => ({ ...s }));
 
     if (savedEntry.entryType === 'dispatch') {
-      if (savedEntry.isExternalSource && savedEntry.sourceId) {
-        // Deduct from the matching external source
+      // 1. Deduct all variety quantities from their respective entries in newSources
+      if (savedEntry.openingStockSources && savedEntry.openingStockSources.length > 0) {
+        for (const dispatchSrc of savedEntry.openingStockSources) {
+          newSources = newSources.map((s) =>
+            s.sourceId === dispatchSrc.sourceId
+              ? { ...s, quantity: Math.max(0, s.quantity - dispatchSrc.quantity) }
+              : s
+          );
+        }
+      } else if (savedEntry.isExternalSource && savedEntry.sourceId) {
+        // Fallback for legacy single-variety dispatches
         newSources = newSources.map((s) =>
           s.sourceId === savedEntry.sourceId
             ? { ...s, quantity: Math.max(0, s.quantity - (savedEntry.externalBoxCount ?? 0)) }
@@ -465,8 +544,19 @@ export const EntryDB = {
         newCompanyQty = Math.max(0, newCompanyQty - (savedEntry.currentQuantity ?? 0));
       }
     } else if (savedEntry.entryType === 'return') {
-      // Returns replenish company own inventory
-      newCompanyQty = newCompanyQty + (savedEntry.boxesReturned ?? 0);
+      // Support for variety-specific returns if present in openingStockSources
+      if (savedEntry.openingStockSources && savedEntry.openingStockSources.length > 0) {
+        for (const returnSrc of savedEntry.openingStockSources) {
+          newSources = newSources.map((s) =>
+            s.sourceId === returnSrc.sourceId
+              ? { ...s, quantity: s.quantity + returnSrc.quantity }
+              : s
+          );
+        }
+      } else {
+        // Default: returns replenish company own inventory
+        newCompanyQty = newCompanyQty + (savedEntry.boxesReturned ?? 0);
+      }
     }
 
     const newTotal = newCompanyQty + newSources.reduce((s, r) => s + r.quantity, 0);
@@ -525,9 +615,16 @@ export const StockAlertDB = {
     totalDispatched: number;
     totalReturned: number;
     percentRemaining: number;
+    lowVarieties: string[];
     shouldAlert: boolean;
   }> {
-    const [settings, entries] = await Promise.all([SettingsDB.get(), EntryDB.getAll()]);
+    const [settings, entries, sources] = await Promise.all([
+      SettingsDB.get(),
+      EntryDB.getAll(),
+      SourceDB.getAll()
+    ]);
+    
+    // Global Stock
     const openingStock = entries
       .filter((e) => e.entryType === 'opening_balance')
       .reduce((s, e) => s + (e.currentQuantity || 0), 0);
@@ -541,14 +638,55 @@ export const StockAlertDB = {
     const percentRemaining = openingStock > 0
       ? Math.round((currentStock / openingStock) * 100)
       : 100;
-    const threshold = settings.stockAlertThreshold ?? 30;
+    
+    // Variety Specific Stock
+    const lowVarieties: string[] = [];
+    const activeSources = sources.filter(v => v.isActive !== false);
+    
+    for (const source of activeSources) {
+      if (!source.stockThreshold || source.stockThreshold <= 0) continue;
+      
+      const sOpening = entries
+        .filter(e => e.entryType === 'opening_balance' && e.openingStockSources?.some(ss => ss.sourceId === source.id))
+        .reduce((sum, e) => {
+          const matched = e.openingStockSources?.find(ss => ss.sourceId === source.id);
+          return sum + (matched?.quantity || 0);
+        }, 0);
+        
+      const sDispatched = entries
+        .filter(e => e.entryType === 'dispatch' && e.sourceId === source.id)
+        .reduce((sum, e) => sum + (e.externalBoxCount || 0), 0);
+        
+      const sCurrent = sOpening - sDispatched;
+      if (sCurrent < source.stockThreshold) {
+        lowVarieties.push(source.sourceName);
+      }
+    }
+    
     const dismissed = await this.isDismissed();
+    const globalCountThreshold = settings.stockAlertThresholdCount ?? 50;
+    
+    // Alert if:
+    // 1. Global stock is below global count threshold
+    // 2. OR Any variety is below its specific threshold
+    const shouldGlobalAlert = currentStock < globalCountThreshold;
+    const shouldVarietyAlert = lowVarieties.length > 0;
+    
     const shouldAlert =
       settings.stockAlertEnabled &&
       openingStock > 0 &&
-      percentRemaining <= threshold &&
+      (shouldGlobalAlert || shouldVarietyAlert) &&
       !dismissed;
-    return { openingStock, currentStock, totalDispatched, totalReturned, percentRemaining, shouldAlert };
+      
+    return { 
+      openingStock, 
+      currentStock, 
+      totalDispatched, 
+      totalReturned, 
+      percentRemaining, 
+      lowVarieties,
+      shouldAlert 
+    };
   },
 };
 
@@ -674,6 +812,7 @@ export interface BackupPayload {
   version: string;
   exportedAt: string;
   customers: Customer[];
+  areas: CustomerArea[];
   sources: InventorySource[];
   entries: BoxEntry[];
   settings: AppSettings;
@@ -681,8 +820,9 @@ export interface BackupPayload {
 
 export const BackupDB = {
   async export(): Promise<BackupPayload> {
-    const [customers, sources, entries, settings] = await Promise.all([
+    const [customers, areas, sources, entries, settings] = await Promise.all([
       CustomerDB.getAll(),
+      AreaDB.getAll(),
       SourceDB.getAll(),
       EntryDB.getAll(),
       SettingsDB.get(),
@@ -691,6 +831,7 @@ export const BackupDB = {
       version: DB_VERSION,
       exportedAt: new Date().toISOString(),
       customers,
+      areas,
       sources,
       entries,
       settings,
@@ -706,5 +847,19 @@ export const BackupDB = {
     a.click();
     URL.revokeObjectURL(url);
     await SettingsDB.save({ lastBackup: new Date().toISOString() });
+  },
+};
+
+// ─── System DB ────────────────────────────────────────────────────────────────
+
+export const SystemDB = {
+  async clearAll(): Promise<{ success: boolean; message: string }> {
+    return apiFetch('/system/clear-all', { method: 'POST' });
+  },
+  async importData(payload: BackupPayload): Promise<{ success: boolean; message: string }> {
+    return apiFetch('/system/import', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
   },
 };

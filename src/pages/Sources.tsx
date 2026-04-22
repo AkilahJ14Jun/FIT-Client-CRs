@@ -52,8 +52,7 @@ export const Sources: React.FC = () => {
 
   const validate = () => {
     const e: Partial<FormState> = {};
-    if (!form.sourceName.trim()) e.sourceName = 'Source name is required';
-    if (!form.contactPerson.trim()) e.contactPerson = 'Contact person is required';
+    if (!form.sourceName.trim()) e.sourceName = 'Variety name is required';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -62,9 +61,9 @@ export const Sources: React.FC = () => {
   const openEdit = (s: InventorySource) => {
     setForm({
       sourceName: s.sourceName,
-      contactPerson: s.contactPerson,
-      mobile: s.mobile,
-      address: s.address,
+      contactPerson: s.contactPerson || '',
+      mobile: s.mobile || '',
+      address: s.address || '',
       notes: s.notes,
       isActive: s.isActive,
     });
@@ -147,11 +146,8 @@ export const Sources: React.FC = () => {
               </div>
               <div>
                 <p className="font-semibold text-gray-800 text-sm">{s.sourceName}</p>
-                <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-1"><User size={11} /> {s.contactPerson}</p>
               </div>
               <div className="space-y-1.5 text-xs text-gray-500">
-                {s.mobile && (<p className="flex items-center gap-1.5"><Phone size={11} className="text-gray-400" /><a href={`tel:${s.mobile}`} className="hover:text-blue-600">{s.mobile}</a></p>)}
-                {s.address && (<p className="flex items-center gap-1.5"><MapPin size={11} className="text-gray-400" /><span className="truncate">{s.address}</span></p>)}
                 {s.notes && (<p className="italic text-gray-400 truncate">{s.notes}</p>)}
               </div>
               <div className="pt-1 border-t border-gray-50 flex items-center justify-between">
@@ -166,12 +162,7 @@ export const Sources: React.FC = () => {
       <Modal open={showForm} onClose={() => setShowForm(false)} title={editing ? t('src.editTitle') : t('src.addTitle')}
         footer={<div className="flex gap-3 justify-end"><Button variant="secondary" onClick={() => setShowForm(false)}>{t('dispatch.cancel')}</Button><Button onClick={handleSave}>{editing ? t('cust.saveChanges') : t('src.add')}</Button></div>}>
         <div className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Input label={t('src.srcName')} value={form.sourceName} onChange={(e) => setForm((f) => ({ ...f, sourceName: e.target.value }))} error={errors.sourceName} placeholder={t('src.placeholderName')} />
-            <Input label={t('src.contact')} value={form.contactPerson} onChange={(e) => setForm((f) => ({ ...f, contactPerson: e.target.value }))} error={errors.contactPerson} placeholder={t('src.placeholderContact')} />
-            <Input label={t('cust.mobile')} value={form.mobile} onChange={(e) => setForm((f) => ({ ...f, mobile: e.target.value }))} placeholder={t('src.placeholderMobile')} type="tel" />
-          </div>
-          <TextArea label={t('cust.address')} value={form.address} onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))} placeholder={t('src.placeholderAddr')} rows={2} />
+          <Input label={t('src.srcName')} value={form.sourceName} onChange={(e) => setForm((f) => ({ ...f, sourceName: e.target.value }))} error={errors.sourceName} placeholder={t('src.placeholderName')} />
           <TextArea label={t('src.notes')} value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} placeholder={t('src.placeholderNotes')} rows={2} />
           {editing && (
             <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">

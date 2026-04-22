@@ -137,7 +137,20 @@ export const Reports: React.FC = () => {
     }
 
     const fname = `FIT_Report_${format(new Date(), 'yyyyMMdd_HHmm')}.pdf`;
-    doc.save(fname);
+    
+    // Default download via robust Anchor + Blob mechanism
+    const blob = doc.output('blob');
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fname;
+    document.body.appendChild(a);
+    a.click();
+    
+    setTimeout(() => {
+      if (document.body.contains(a)) document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 2500);
   };
 
   return (

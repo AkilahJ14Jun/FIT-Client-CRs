@@ -6,7 +6,7 @@ import { TopBar } from './TopBar';
 const titles: Record<string, { title: string; subtitle: string }> = {
   '/': { title: 'Dashboard', subtitle: 'Overview of your fish box operations' },
   '/customers': { title: 'Customer Master', subtitle: 'Manage your customer records' },
-  '/sources': { title: 'Inventory Sources', subtitle: 'Manage box supply source details' },
+  '/sources': { title: 'Fish Varieties', subtitle: 'Manage types and varieties of fish' },
   '/entries': { title: 'Box Entries', subtitle: 'All dispatch and return records' },
   '/dispatch': { title: 'New Dispatch Entry', subtitle: 'Record box dispatches and returns' },
   '/reports': { title: 'Reports & Analytics', subtitle: 'Box movement and customer reports' },

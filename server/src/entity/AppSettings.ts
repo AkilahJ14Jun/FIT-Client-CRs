@@ -47,6 +47,9 @@ export class AppSettings {
   @Column("int", { default: 30 })
   stockAlertThreshold!: number;
 
+  @Column("int", { default: 50 })
+  stockAlertThresholdCount!: number;
+
   @Column({ default: 'en' })
   language!: string;
 

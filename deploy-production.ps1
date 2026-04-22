@@ -27,8 +27,8 @@
 
 #Requires -RunAsAdministrator
 param(
-    [string]$InstallRoot = "C:\FIT",
-    [string]$NginxRoot   = "C:\nginx",
+    [string]$InstallRoot = "E:\FIT",
+    [string]$NginxRoot   = "E:\nginx",
     [switch]$UseNSSM,
     [switch]$SkipWhatsApp,
     [switch]$SkipFirewall,
@@ -381,7 +381,7 @@ http {
 if (-not $SkipWhatsApp) {
     Write-Step "Step 7: Register WhatsApp fitshare:// Protocol"
 
-    $protocolScript = "$InstallRoot\scripts\FITShareFinal.ps1"
+    $protocolScript = "$InstallRoot\scripts\ShareOnWhatsApp.ps1"
     if (Test-Path $protocolScript) {
         $ProtocolName = "fitshare"
         $PowerShellPath = "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"

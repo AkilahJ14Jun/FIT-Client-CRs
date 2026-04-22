@@ -10,6 +10,7 @@ import { AppSettings } from "./entity/AppSettings";
 import { AuditLog } from "./entity/AuditLog";
 import { CustomerArea } from "./entity/CustomerArea";
 import { User } from "./entity/User";
+import { Not, IsNull } from "typeorm";
 import bcrypt from "bcryptjs";
 
 const app = express();
@@ -126,16 +127,124 @@ app.post("/api/entries/delete-all", async (req, res) => {
     const repo = AppDataSource.getRepository(BoxEntry);
     const countResult = await repo.count();
     if (countResult === 0) return res.json({ success: true, deletedCount: 0, message: 'No entries to delete' });
-    await repo.delete({}); // Delete all rows, keep table
+    await repo.delete({ id: Not(IsNull()) }); // TypeORM workaround for "delete all"
     await logAudit("DELETE", "BoxEntry", "all", `Deleted all ${countResult} entries`);
     // Also reset all customer sent counts to complete the fresh start
     const customerRepo = AppDataSource.getRepository(Customer);
-    await customerRepo.update({}, { totalSentCount: 0 });
+    await customerRepo.update({ id: Not(IsNull()) }, { totalSentCount: 0 });
     await logAudit("UPDATE", "Customer", "all", "Reset sent count for all customers after bulk entry deletion");
     res.json({ success: true, deletedCount: countResult });
   } catch (err) {
     console.error("Error deleting all entries:", err);
     res.status(500).json({ error: "Failed to delete entries", details: (err as Error).message });
+  }
+});
+
+// ─── System Clear All Data ──────────────────────────────────
+app.post("/api/system/clear-all", async (req, res) => {
+  const queryRunner = AppDataSource.createQueryRunner();
+  await queryRunner.connect();
+  await queryRunner.startTransaction();
+  try {
+    const entryRepo = queryRunner.manager.getRepository(BoxEntry);
+    const customerRepo = queryRunner.manager.getRepository(Customer);
+    const areaRepo = queryRunner.manager.getRepository(CustomerArea);
+    const sourceRepo = queryRunner.manager.getRepository(InventorySource);
+
+    // Delete business records in order of dependencies (child first)
+    await entryRepo.delete({ id: Not(IsNull()) });
+    await customerRepo.delete({ id: Not(IsNull()) });
+    await sourceRepo.delete({ id: Not(IsNull()) });
+    await areaRepo.delete({ id: Not(IsNull()) });
+
+    await logAudit("DELETE", "SYSTEM", "all", "Full system data clear (business records only)");
+    
+    await queryRunner.commitTransaction();
+    res.json({ success: true, message: "All business records have been cleared." });
+  } catch (err) {
+    await queryRunner.rollbackTransaction();
+    console.error("Error during full system clear:", err);
+    res.status(500).json({ error: "Failed to clear system data", details: (err as Error).message });
+  } finally {
+    await queryRunner.release();
+  }
+});
+
+// ─── System Bulk Import ─────────────────────────────────────
+app.post("/api/system/import", async (req, res) => {
+  const { customers, sources, entries, areas, settings } = req.body;
+  const queryRunner = AppDataSource.createQueryRunner();
+  await queryRunner.connect();
+  await queryRunner.startTransaction();
+  try {
+    const customerRepo = queryRunner.manager.getRepository(Customer);
+    const sourceRepo = queryRunner.manager.getRepository(InventorySource);
+    const entryRepo = queryRunner.manager.getRepository(BoxEntry);
+    const areaRepo = queryRunner.manager.getRepository(CustomerArea);
+    const settingsRepo = queryRunner.manager.getRepository(AppSettings);
+
+    // 1. Restore Areas
+    if (areas && Array.isArray(areas)) {
+      for (const a of areas) {
+        let existing = await areaRepo.findOneBy({ id: a.id });
+        if (existing) Object.assign(existing, a);
+        else existing = areaRepo.create(a) as any as CustomerArea;
+        await areaRepo.save(existing);
+      }
+    }
+
+    // 2. Restore Varieties (InventorySources)
+    if (sources && Array.isArray(sources)) {
+      for (const s of sources) {
+        let existing = await sourceRepo.findOneBy({ id: s.id });
+        if (existing) Object.assign(existing, s);
+        else existing = sourceRepo.create(s) as any as InventorySource;
+        await sourceRepo.save(existing);
+      }
+    }
+
+    // 3. Restore Customers
+    if (customers && Array.isArray(customers)) {
+      for (const c of customers) {
+        let existing = await customerRepo.findOneBy({ id: c.id });
+        if (existing) Object.assign(existing, c);
+        else existing = customerRepo.create(c) as any as Customer;
+        await customerRepo.save(existing);
+      }
+    }
+
+    // 4. Restore Entries
+    if (entries && Array.isArray(entries)) {
+      for (const e of entries) {
+        let existing = await entryRepo.findOneBy({ id: e.id });
+        if (existing) Object.assign(existing, e);
+        else existing = entryRepo.create(e) as any as BoxEntry;
+        await entryRepo.save(existing);
+      }
+    }
+
+    // 5. Restore Settings
+    if (settings) {
+      let existing = await settingsRepo.findOne({ where: {} });
+      if (existing) {
+        Object.assign(existing, settings);
+        await settingsRepo.save(existing);
+      } else {
+        const newSettings = settingsRepo.create(settings);
+        await settingsRepo.save(newSettings);
+      }
+    }
+
+    await logAudit("RESTORE", "SYSTEM", "all", "Bulk system data restore/import");
+    
+    await queryRunner.commitTransaction();
+    res.json({ success: true, message: "Data imported successfully." });
+  } catch (err) {
+    await queryRunner.rollbackTransaction();
+    console.error("Error during bulk import:", err);
+    res.status(500).json({ error: "Failed to import data", details: (err as Error).message });
+  } finally {
+    await queryRunner.release();
   }
 });
 

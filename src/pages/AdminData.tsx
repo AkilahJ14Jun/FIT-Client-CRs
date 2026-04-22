@@ -1,12 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Plus, Pencil, Trash2, RotateCcw, Search, X,
   Users, Database, Package, MapPin, Settings as SettingsIcon,
-  AlertTriangle
+  AlertTriangle, ShieldCheck, Download, Upload
 } from 'lucide-react';
 import {
-  CustomerDB, SourceDB, AreaDB, EntryDB, SettingsDB,
+  CustomerDB, SourceDB, AreaDB, EntryDB, SettingsDB, BackupDB, SystemDB,
   type Customer, type InventorySource, type CustomerArea, type BoxEntry, type AppSettings,
 } from '../db/database';
 import { useAuth } from '../auth/AuthContext';
@@ -16,16 +16,17 @@ import { Badge } from '../components/ui/Badge';
 import { ConfirmModal } from '../components/ui/Modal';
 import { format } from 'date-fns';
 
-type TabId = 'customers' | 'areas' | 'sources' | 'entries' | 'settings';
+type TabId = 'customers' | 'areas' | 'sources' | 'entries' | 'settings' | 'operations';
 
 interface TabDef { id: TabId; label: string; icon: React.ReactNode }
 
 const TAB_ITEMS: Record<TabId, { singular: string; plural: string }> = {
   customers: { singular: 'Customer', plural: 'Customers' },
   areas: { singular: 'Customer Area', plural: 'Areas' },
-  sources: { singular: 'Inventory Source', plural: 'Sources' },
+  sources: { singular: 'Fish Variety', plural: 'Varieties' },
   entries: { singular: 'Box Entry', plural: 'Entries' },
   settings: { singular: 'Setting', plural: 'Settings' },
+  operations: { singular: 'Operation', plural: 'Operations' },
 };
 
 const ENTRY_TYPE_LABEL: Record<string, string> = {
@@ -42,6 +43,11 @@ export const AdminData: React.FC = () => {
   const [search, setSearch] = useState('');
   const [toast, setToast] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
+  const [backupExported, setBackupExported] = useState(false);
+  const [importResult, setImportResult] = useState<{ success: boolean; message: string } | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   // Data collections
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -73,14 +79,15 @@ export const AdminData: React.FC = () => {
   const TABS: TabDef[] = [
     { id: 'customers', label: 'Customers', icon: <Users size={15} /> },
     { id: 'areas', label: 'Areas', icon: <MapPin size={15} /> },
-    { id: 'sources', label: 'Sources', icon: <Database size={15} /> },
+    { id: 'sources', label: 'Varieties', icon: <Database size={15} /> },
     { id: 'entries', label: 'Entries', icon: <Package size={15} /> },
     { id: 'settings', label: 'Settings', icon: <SettingsIcon size={15} /> },
+    { id: 'operations', label: 'Operations', icon: <ShieldCheck size={15} /> },
   ];
 
   const itemsCount = {
     customers: customers.length, areas: areas.length,
-    sources: sources.length, entries: entries.length, settings: settings ? 1 : 0,
+    sources: sources.length, entries: entries.length, settings: settings ? 1 : 0, operations: 2,
   };
 
   // ── Row deletion ──
@@ -89,7 +96,24 @@ export const AdminData: React.FC = () => {
       if (tab === 'customers') await CustomerDB.delete(id);
       else if (tab === 'areas') await AreaDB.delete(id);
       else if (tab === 'sources') await SourceDB.delete(id);
-      else if (tab === 'entries') await EntryDB.delete(id);
+      else if (tab === 'entries') {
+        const entry = entries.find(e => e.id === id);
+        if (entry) {
+          if (entry.entryType === 'opening_balance') {
+            if (entry.currentQuantity > 0) {
+              setDeleteTarget(null);
+              return;
+            }
+          } else if (entry.entryType === 'dispatch' || entry.entryType === 'return') {
+            if (entry.totalBoxesSent > 0 || entry.balanceBoxes > 0) {
+              showToast('Balance boxes pending return. Cannot delete!');
+              setDeleteTarget(null);
+              return;
+            }
+          }
+        }
+        await EntryDB.delete(id);
+      }
       showToast(`${TAB_ITEMS[tab].singular} deleted`);
       setDeleteTarget(null);
       await loadData();
@@ -197,6 +221,62 @@ export const AdminData: React.FC = () => {
     showToast('Settings saved');
   };
 
+  const handleBackup = async () => {
+    try {
+      await BackupDB.exportJSON();
+      setBackupExported(true);
+      showToast('Backup downloaded successfully. Clear All Data is now enabled.');
+    } catch (err) {
+      showToast('Backup failed');
+    }
+  };
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const json = ev.target?.result as string;
+      try {
+        const data = JSON.parse(json);
+        const res = await SystemDB.importData(data);
+        if (res.success) {
+          setImportResult({ success: true, message: 'Data restored successfully' });
+          showToast('Data restored successfully');
+          await loadData();
+        } else {
+          setImportResult({ success: false, message: `Restore failed: ${res.message}` });
+          showToast('Restore failed');
+        }
+      } catch (err) {
+        setImportResult({ success: false, message: `Restore failed: ${(err as Error).message}` });
+        showToast('Restore failed');
+      } finally {
+        setLoading(false);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const handleFullClear = async () => {
+    setIsClearing(true);
+    try {
+      const res = await SystemDB.clearAll();
+      if (res.success) {
+        showToast('All business records cleared');
+        await loadData();
+      } else {
+        showToast('Clear failed');
+      }
+    } catch (err) {
+      showToast(`Error: ${(err as Error).message}`);
+    } finally {
+      setIsClearing(false);
+      setShowClearConfirm(false);
+    }
+  };
+
   // ── Filtered lists ──
   const filteredData = (): unknown[] => {
     const q = search.toLowerCase();
@@ -251,7 +331,7 @@ export const AdminData: React.FC = () => {
     if (tab === 'sources') {
       return (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Input label="Source Name" value={fv('sourceName')} onChange={e => setF('sourceName', e.target.value)} placeholder="Source name" error={formErrors.sourceName} />
+          <Input label="Variety Name" value={fv('sourceName')} onChange={e => setF('sourceName', e.target.value)} placeholder="Variety name" error={formErrors.sourceName} />
           <Input label="Contact Person" value={fv('contactPerson')} onChange={e => setF('contactPerson', e.target.value)} placeholder="Name" />
           <Input label="Mobile" value={fv('mobile')} onChange={e => setF('mobile', e.target.value)} placeholder="Phone" />
           <Input label="Address" value={fv('address')} onChange={e => setF('address', e.target.value)} placeholder="Address" />
@@ -279,7 +359,7 @@ export const AdminData: React.FC = () => {
           <Input label="Vehicle Number" value={fv('vehicleNumber')} onChange={e => setF('vehicleNumber', e.target.value)} placeholder="TN-01-AB-1234" />
           <label className="flex items-center gap-3 pt-5 cursor-pointer select-none">
             <input type="checkbox" checked={!!form.isExternalSource} onChange={e => setF('isExternalSource', e.target.checked)} className="w-4 h-4 accent-blue-700" />
-            <span className="text-sm font-medium text-gray-700">External Source</span>
+            <span className="text-sm font-medium text-gray-700">External Variety</span>
           </label>
         </div>
       );
@@ -295,7 +375,7 @@ export const AdminData: React.FC = () => {
       : tab === 'areas'
       ? ['ID', 'Area Name', 'Notes', 'Status', 'Actions']
       : tab === 'sources'
-      ? ['ID', 'Source', 'Contact', 'Mobile', 'Address', 'Status', 'Actions']
+      ? ['ID', 'Variety', 'Contact', 'Mobile', 'Address', 'Status', 'Actions']
       : tab === 'entries'
       ? ['ID', 'Bill#', 'Date', 'Customer', 'Type', 'Total', 'Ret.', 'Bal.', 'Actions']
       : [];
@@ -345,7 +425,7 @@ export const AdminData: React.FC = () => {
       <table className="w-full text-sm"><thead><tr className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wider">
         {cols.map(h => <th key={h} className={`px-4 py-3 ${rightCols.has(h) ? 'text-right' : 'text-left'}`}>{h}</th>)}
       </tr></thead><tbody className="divide-y divide-gray-50">
-        {(data as InventorySource[]).length === 0 ? <tr><td colSpan={99} className="py-10 text-center text-gray-400">No sources</td></tr>
+        {(data as InventorySource[]).length === 0 ? <tr><td colSpan={99} className="py-10 text-center text-gray-400">No varieties</td></tr>
           : (data as InventorySource[]).map(s => (
             <tr key={s.id} className="hover:bg-blue-50/30 transition-colors">
               <td className="px-4 py-3 font-mono text-xs">{s.id.slice(0, 8)}</td>
@@ -405,6 +485,96 @@ export const AdminData: React.FC = () => {
           ))}
         </div>
         <Button onClick={handleSaveSettings}>Save Settings</Button>
+      </div>
+    );
+  };
+
+  const renderOperationsTab = () => {
+    return (
+      <div className="p-8 space-y-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Backup Card */}
+          <div className="bg-blue-50/50 rounded-2xl border border-blue-100 p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-blue-100 text-blue-700 rounded-xl">
+                <Database size={20} />
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-800">Data Backup</h3>
+                <p className="text-xs text-gray-500">Download a full snapshot of your business data</p>
+              </div>
+            </div>
+            <p className="text-sm text-gray-600">
+              Generates a JSON file containing all Customers, Varieties, Areas, and Box Entries.
+              Keep this file safe as it can be used to restore your data later.
+            </p>
+            <Button icon={<Download size={16} />} onClick={handleBackup}>Export Full Backup</Button>
+          </div>
+
+          {/* Clear All Card */}
+          <div className="bg-red-50/50 rounded-2xl border border-red-100 p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-red-100 text-red-700 rounded-xl">
+                <AlertTriangle size={20} />
+              </div>
+              <div>
+                <h3 className="font-semibold text-red-800">Clear Business Records</h3>
+                <p className="text-xs text-red-500">Permanently delete all business data</p>
+              </div>
+            </div>
+            <p className="text-sm text-gray-600">
+              This action will remove all **Customers, Varieties, Areas, and Entries**.
+              User accounts and system settings will remain unchanged.
+            </p>
+            <div className="space-y-3">
+              <Button 
+                variant="danger" 
+                icon={<Trash2 size={16} />} 
+                onClick={() => setShowClearConfirm(true)}
+                disabled={!backupExported}
+              >
+                Clear All Data
+              </Button>
+              {!backupExported && (
+                <p className="text-[10px] text-red-500 font-medium">
+                  * Please Export Full Backup first to enable this feature.
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Restore Card */}
+          <div className="bg-emerald-50/50 rounded-2xl border border-emerald-100 p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-emerald-100 text-emerald-700 rounded-xl">
+                <Upload size={20} />
+              </div>
+              <div>
+                <h3 className="font-semibold text-emerald-800">Restore from Backup</h3>
+                <p className="text-xs text-emerald-500">Restore business records from a JSON file</p>
+              </div>
+            </div>
+            <p className="text-sm text-gray-600">
+              Select a previously exported JSON backup file to restore your database state.
+              This will overwrite or append based on record IDs.
+            </p>
+            <input ref={fileRef} type="file" accept=".json" onChange={handleImport} className="hidden" />
+            <Button variant="secondary" icon={<Upload size={16} />} onClick={() => fileRef.current?.click()}>Choose Backup File</Button>
+            {importResult && (
+              <p className={`text-xs font-medium ${importResult.success ? 'text-emerald-700' : 'text-red-600'}`}>
+                {importResult.message}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-amber-50 rounded-xl p-4 border border-amber-100 flex gap-3">
+          <AlertTriangle size={20} className="text-amber-600 shrink-0" />
+          <div className="text-xs text-amber-800">
+            <p className="font-semibold mb-1">Important Note:</p>
+            <p>Clearing data is irreversible. Please ensure you have taken a full backup before proceeding with a fresh start. This operation log will be recorded in the audit logs.</p>
+          </div>
+        </div>
       </div>
     );
   };
@@ -470,11 +640,16 @@ export const AdminData: React.FC = () => {
           <div className="py-16 text-center text-gray-400 text-sm">Loading...</div>
         ) : tab === 'settings' ? (
           renderSettingsTab()
+        ) : tab === 'operations' ? (
+          renderOperationsTab()
         ) : renderTable()}
       </div>
 
       <ConfirmModal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={() => deleteTarget && handleDelete(deleteTarget)}
         title={`Delete ${TAB_ITEMS[tab].singular}?`} message={`Are you sure you want to delete this ${TAB_ITEMS[tab].singular.toLowerCase()}? This action cannot be undone.`} confirmLabel="Delete" variant="danger" />
+
+      <ConfirmModal open={showClearConfirm} onClose={() => !isClearing && setShowClearConfirm(false)} onConfirm={handleFullClear}
+        title="Clear All Business Records?" message="This will permanently delete all Customers, Varieties, Areas, and Box Entries. User accounts and settings will NOT be removed. THIS ACTION CANNOT BE UNDONE!" confirmLabel={isClearing ? 'Clearing...' : 'Clear Everything'} variant="danger" />
     </div>
   );
 };

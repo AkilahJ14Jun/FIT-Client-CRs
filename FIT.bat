@@ -1,8 +1,8 @@
 REM Change drive
-g:
+e:
 
 REM Change to backend location
-cd G:\bobby\GitHub\FIT Client CRs\server
+cd E:\FIT\server
 
 REM Start backend
 npm run dev

@@ -21,6 +21,7 @@ import {
   receiptFilename,
   type WhatsAppPayload,
 } from '../../utils/customerReceipt';
+import { useTranslation } from '../../i18n/TranslationProvider';
 
 interface Props {
   open:     boolean;
@@ -32,15 +33,18 @@ interface Props {
 export const WhatsAppSendModal: React.FC<Props> = ({
   open, entry, customer, onClose,
 }) => {
+  const { t } = useTranslation();
   const [payload, setPayload] = useState<WhatsAppPayload | null>(null);
   const [altPhone, setAltPhone] = useState<string>('');
+  const [launching, setLaunching] = useState(false);
 
   // Reset state whenever a new entry/customer arrives
   useEffect(() => {
     if (open && entry && customer) {
-      const p = buildWhatsAppPayload(entry, customer);
-      setPayload(p);
-      setAltPhone(p.phone || '');
+      buildWhatsAppPayload(entry, customer).then(p => {
+        setPayload(p);
+        setAltPhone(p.phone || '');
+      });
     }
   }, [open, entry?.id, customer?.id]);
 
@@ -57,8 +61,14 @@ export const WhatsAppSendModal: React.FC<Props> = ({
   const filename = receiptFilename(entry);
 
   const handleLaunchAutomation = () => {
+    if (launching) return;
+    setLaunching(true);
+
     const finalPayload = { ...payload, phone: altPhone };
     triggerWhatsAppAutomation(finalPayload, entry, customer);
+
+    // Reset after some time to allow potential retry but prevent rapid clicks
+    setTimeout(() => setLaunching(false), 5000);
   };
 
   return (
@@ -176,15 +186,15 @@ export const WhatsAppSendModal: React.FC<Props> = ({
           {/* Action Button */}
           <button
             onClick={handleLaunchAutomation}
-            disabled={!hasPhone}
+            disabled={!hasPhone || launching}
             className={`w-full flex items-center justify-center gap-3 px-6 py-4 rounded-xl text-base font-bold transition-all shadow-md
-              ${!hasPhone
+              ${(!hasPhone || launching)
                 ? 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200 shadow-none'
                 : 'bg-green-600 hover:bg-green-700 text-white hover:scale-[1.02] active:scale-[0.98]'
               }`}
           >
             <ExternalLink size={20} />
-            Launch Automated Share
+            {launching ? t('entries.launching') : 'Launch Automated Share'}
           </button>
 
           <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex gap-3">

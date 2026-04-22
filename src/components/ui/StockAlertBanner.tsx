@@ -9,7 +9,7 @@ interface Props {
   onRefresh: () => void;
 }
 
-const DEFAULT_STOCK = { openingStock: 0, currentStock: 0, totalDispatched: 0, totalReturned: 0, percentRemaining: 100, shouldAlert: false };
+const DEFAULT_STOCK = { openingStock: 0, currentStock: 0, totalDispatched: 0, totalReturned: 0, percentRemaining: 100, lowVarieties: [] as string[], shouldAlert: false };
 
 export const StockAlertBanner: React.FC<Props> = ({ onRefresh }) => {
   const { t } = useTranslation();
@@ -18,9 +18,8 @@ export const StockAlertBanner: React.FC<Props> = ({ onRefresh }) => {
   const [flash,      setFlash]        = useState(true);
 
   const reload = useCallback(async () => {
-    const [sl, settings] = await Promise.all([StockAlertDB.getStockLevel(), SettingsDB.get()]);
+    const sl = await StockAlertDB.getStockLevel();
     setStockLevel(sl);
-    setThreshold(settings.stockAlertThreshold ?? 30);
   }, []);
 
   useEffect(() => { reload(); }, [reload]);
@@ -52,9 +51,9 @@ export const StockAlertBanner: React.FC<Props> = ({ onRefresh }) => {
 
   if (!stockLevel.shouldAlert) return null;
 
-  const { openingStock, currentStock, percentRemaining } = stockLevel;
-  const isCritical = percentRemaining <= 10;
-  const isLow      = percentRemaining <= 20;
+  const { openingStock, currentStock, lowVarieties } = stockLevel;
+  const isCritical = currentStock <= 10;
+  const isLow      = currentStock <= 30;
 
   const bgClass    = isCritical ? 'bg-red-600'    : isLow ? 'bg-orange-500'  : 'bg-amber-500';
   const flashBg    = isCritical ? 'bg-red-700'    : isLow ? 'bg-orange-600'  : 'bg-amber-600';
@@ -84,7 +83,13 @@ export const StockAlertBanner: React.FC<Props> = ({ onRefresh }) => {
                     {isCritical ? t('alert.critical') : isLow ? t('alert.low') : t('alert.refill')}
                   </h3>
                 </div>
-                <p className="text-sm opacity-90 mt-0.5" dangerouslySetInnerHTML={{ __html: `${t('alert.currentDrop')} <strong className="text-white font-extrabold text-lg">${percentRemaining}%</strong> — ${t('alert.threshold')} ${threshold}%` }} />
+                <p className="text-sm opacity-90 mt-0.5">
+                  {lowVarieties.length > 0 ? (
+                    <>The following varieties are low: <strong className="text-white font-extrabold">{lowVarieties.join(', ')}</strong></>
+                  ) : (
+                    <>Current global stock is <strong className="text-white font-extrabold text-lg">{currentStock}</strong> boxes</>
+                  )}
+                </p>
               </div>
             </div>
             <button onClick={handleDismissToday} className="flex-shrink-0 w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors" title="Dismiss until tomorrow">
@@ -94,13 +99,11 @@ export const StockAlertBanner: React.FC<Props> = ({ onRefresh }) => {
 
           <div className="mt-4">
             <div className="flex justify-between text-xs opacity-80 mb-1.5">
-              <span>{t('alert.level')}: <strong>{currentStock}</strong> {t('alert.of')} <strong>{openingStock}</strong> {t('alert.boxesRemaining')}</span>
-              <span className="font-bold">{percentRemaining}{t('alert.left')}</span>
+              <span>{t('alert.level')}: <strong>{currentStock}</strong> boxes remaining</span>
             </div>
             <div className="h-3 bg-white/20 rounded-full overflow-hidden">
-              <div className={`h-full rounded-full transition-all duration-700 ${isCritical ? 'bg-red-200' : isLow ? 'bg-orange-200' : 'bg-white'}`} style={{ width: `${Math.max(2, percentRemaining)}%` }} />
+              <div className={`h-full rounded-full transition-all duration-700 ${isCritical ? 'bg-red-200' : isLow ? 'bg-orange-200' : 'bg-white'}`} style={{ width: `${Math.min(100, (currentStock/openingStock)*100)}%` }} />
             </div>
-            <div className="flex justify-between text-[10px] opacity-60 mt-1"><span>0 {t('alert.boxesRemaining')}</span><span>{openingStock} {t('alert.openingStock')}</span></div>
           </div>
 
           <div className="mt-3 grid grid-cols-3 gap-3">
@@ -119,7 +122,7 @@ export const StockAlertBanner: React.FC<Props> = ({ onRefresh }) => {
             <a href="#/settings" className="flex items-center gap-1.5 text-white/70 hover:text-white text-xs px-2 py-2 transition-colors ml-auto" title={t('alert.configure')}><Settings size={13} />{t('alert.configure')}</a>
           </div>
 
-          <p className="text-[10px] opacity-50 mt-3">{t('alert.footer')} {threshold}% {t('alert.footerEnd')}</p>
+          <p className="text-[10px] opacity-50 mt-3">Stock alert thresholds are now managed in Settings.</p>
         </div>
       </div>
     </>

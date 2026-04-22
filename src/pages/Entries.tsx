@@ -4,16 +4,16 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Plus, Search, Pencil, Trash2, FileDown, MessageCircle,
-  ChevronDown, ChevronUp, Filter, Package, Receipt,
+  Plus, Search, Pencil, FileDown, MessageCircle,
+  ChevronDown, ChevronUp, Filter, Package, Receipt, Printer
 } from 'lucide-react';
 import { EntryDB, CustomerDB, AreaDB, type BoxEntry, type Customer, type CustomerArea } from '../db/database';
 import { Button }                from '../components/ui/Button';
 import { Badge }                 from '../components/ui/Badge';
-import { ConfirmModal }          from '../components/ui/Modal';
 import { ReceiptPreviewModal }   from '../components/ui/ReceiptPreviewModal';
 import { WhatsAppSendModal }     from '../components/ui/WhatsAppSendModal';
 import { downloadReceiptAsPDF } from '../utils/customerReceipt';
+import { downloadEntriesPDF, printEntries } from '../utils/entriesReport';
 import { format }                from 'date-fns';
 import { useTranslation } from '../i18n/TranslationProvider';
 
@@ -39,7 +39,6 @@ export const Entries: React.FC = () => {
   const [filterArea,     setFilterArea]     = useState('');
   const [sortField,      setSortField]      = useState<'entryDate' | 'billNumber' | 'totalBoxesSent'>('entryDate');
   const [sortDir,        setSortDir]        = useState<'asc' | 'desc'>('desc');
-  const [deleteTarget,   setDeleteTarget]   = useState<BoxEntry | null>(null);
   const [showFilters,    setShowFilters]    = useState(false);
 
   const [receiptOpen,     setReceiptOpen]     = useState(false);
@@ -103,7 +102,7 @@ export const Entries: React.FC = () => {
         (e.customerName || '').toLowerCase().includes(q) ||
         (e.driverName || '').toLowerCase().includes(q) ||
         (e.description || '').toLowerCase().includes(q);
-      const matchType     = !filterType     || e.entryType  === filterType;
+      const matchType     = filterType ? e.entryType === filterType : e.entryType !== 'opening_balance';
       const matchCustomer = !filterCustomer || e.customerId === filterCustomer;
       const matchArea = !filterArea || (() => {
         const cust = customers.find((c) => c.id === e.customerId);
@@ -119,16 +118,49 @@ export const Entries: React.FC = () => {
       return sortDir === 'asc' ? cmp : -cmp;
     });
 
-  const handleDelete = async () => {
-    if (deleteTarget) { await EntryDB.delete(deleteTarget.id); await refresh(); }
-  };
+  // Calculate cumulative totals for EACH entry based on full history
+  const cumulativeData = React.useMemo(() => {
+    // 1. Sort all entries by date and bill number (chronological)
+    const sortedAll = [...entries].sort((a, b) => {
+      let cmp = a.entryDate.localeCompare(b.entryDate);
+      if (cmp === 0) cmp = a.billNumber.localeCompare(b.billNumber);
+      return cmp;
+    });
 
-  const handleDirectDownload = (e: BoxEntry) => {
+    const totals: Record<string, { totalSent: number, totalReturned: number, balance: number }> = {};
+    const running = new Map<string, { sent: number, ret: number }>();
+
+    sortedAll.forEach(e => {
+      const custId = e.customerId;
+      const prev = running.get(custId) || { sent: 0, ret: 0 };
+      
+      // In our model, currentQuantity stored in the DB is the total box count for that entry.
+      const isReturn = e.entryType === 'return';
+      const todaySent = isReturn ? 0 : (e.currentQuantity || 0);
+      const todayRet = e.boxesReturned;
+
+      const newSent = prev.sent + todaySent;
+      const newRet = prev.ret + todayRet;
+      
+      running.set(custId, { sent: newSent, ret: newRet });
+      
+      totals[e.id] = {
+        totalSent: newSent,
+        totalReturned: newRet,
+        balance: newSent - newRet
+      };
+    });
+
+    return totals;
+  }, [entries]);
+
+
+
+  const handleDownloadReceipt = async (e: BoxEntry) => {
     try {
       const customer = resolveCustomer(e);
-      downloadReceiptAsPDF(e, customer);
+      await downloadReceiptAsPDF(e, customer, 'download'); 
       setDownloadDoneId(e.id);
-      showToast(`${t('entries.pdfSuccess')} ${e.billNumber} ${t('entries.downloaded')}`, 'success');
       setTimeout(() => setDownloadDoneId(null), 4000);
     } catch (err) {
       console.error('Receipt PDF download failed:', err);
@@ -136,12 +168,36 @@ export const Entries: React.FC = () => {
     }
   };
 
-  const handlePreviewReceipt = (e: BoxEntry) => {
-    setReceiptEntry(e); setReceiptCustomer(resolveCustomer(e)); setReceiptOpen(true);
+  const handlePreviewReceipt = async (e: BoxEntry) => {
+    try {
+      const customer = resolveCustomer(e);
+      await downloadReceiptAsPDF(e, customer, 'open'); // Preview by opening PDF
+    } catch (err) {
+      showToast(t('entries.pdfFail'), 'error');
+    }
   };
 
   const handleWhatsApp = (e: BoxEntry) => {
     setWaEntry(e); setWaCustomer(resolveCustomer(e)); setWaOpen(true);
+  };
+
+  const handleDownloadList = async () => {
+    try {
+      await downloadEntriesPDF(filtered, customers, cumulativeData);
+      showToast(t('entries.downloaded'), 'success');
+    } catch (err) {
+      console.error('Download list failed:', err);
+      showToast(t('entries.pdfFail'), 'error');
+    }
+  };
+
+  const handlePrintList = async () => {
+    try {
+      await printEntries(filtered, customers, cumulativeData);
+    } catch (err) {
+      console.error('Print list failed:', err);
+      showToast(t('entries.pdfFail'), 'error');
+    }
   };
 
   return (
@@ -165,7 +221,11 @@ export const Entries: React.FC = () => {
           </div>
           <Button variant="secondary" size="md" icon={<Filter size={15} />} onClick={() => setShowFilters((v) => !v)}>{t('entries.filters')}</Button>
         </div>
-        <Button icon={<Plus size={16} />} onClick={() => navigate('/dispatch')}>{t('entries.new')}</Button>
+        <div className="flex gap-2">
+          <Button variant="secondary" size="md" icon={<Printer size={15} />} onClick={handlePrintList}>{t('entries.printList')}</Button>
+          <Button variant="secondary" size="md" icon={<FileDown size={15} />} onClick={handleDownloadList}>{t('entries.downloadList')}</Button>
+          <Button icon={<Plus size={16} />} onClick={() => navigate('/dispatch')}>{t('entries.new')}</Button>
+        </div>
       </div>
 
       {showFilters && (
@@ -180,7 +240,6 @@ export const Entries: React.FC = () => {
           <select value={filterType} onChange={(e) => setFilterType(e.target.value)}
             className="text-sm rounded-lg border border-gray-300 px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
             <option value="">{t('entries.allTypes')}</option>
-            <option value="opening_balance">{t('dispatch.openingBal')}</option>
             <option value="dispatch">{t('dispatch.dispatch')}</option>
             <option value="return">{t('dispatch.return')}</option>
           </select>
@@ -197,7 +256,7 @@ export const Entries: React.FC = () => {
       <div className="flex flex-wrap items-center gap-4 px-1 text-xs text-gray-500">
         <span className="font-semibold text-gray-600 uppercase tracking-wide">{t('entries.actionIcons')}</span>
         <span className="flex items-center gap-1.5"><span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-blue-50 text-blue-700"><Receipt size={13} /></span>{t('entries.previewReceipt')}</span>
-        <span className="flex items-center gap-1.5"><span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-emerald-50 text-emerald-700"><FileDown size={13} /></span>{t('entries.downloadPDF')}</span>
+        <span className="flex items-center gap-1.5"><span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-teal-50 text-teal-700"><FileDown size={14} /></span>Download PDF</span>
         <span className="flex items-center gap-1.5"><span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-green-50 text-green-600"><MessageCircle size={13} /></span>{t('entries.shareWhatsApp')}</span>
       </div>
 
@@ -222,12 +281,10 @@ export const Entries: React.FC = () => {
                   <th className="text-left px-4 py-3 cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort('billNumber')}><span className="flex items-center gap-1">{t('entries.colBill')} <SortIcon field="billNumber" /></span></th>
                   <th className="text-left px-4 py-3">{t('entries.colCustomer')}</th>
                   <th className="text-left px-4 py-3">{t('entries.colType')}</th>
-                  <th className="text-right px-4 py-3 w-[30px]" title="Company's own stock count">{t('entries.colOwnStock')}</th>
-                  <th className="text-right px-4 py-3 w-[30px]" title="Boxes from all other/external sources">{t('entries.colOtherSources')}</th>
+                  <th className="text-right px-4 py-3 w-[60px]">{t('entries.colTotalBoxes')}</th>
                   <th className="text-right px-4 py-3 w-[30px]">{t('entries.colReturned')}</th>
-                  <th className="text-right px-4 py-3 w-[60px]" title="Own stock + Other sources - Returned">{t('entries.colTotalBoxes')}</th>
                   <th className="text-right px-4 py-3">{t('entries.colBalance')}</th>
-                  <th className="text-left px-4 py-3">{t('entries.colActions')}</th>
+                  <th className="text-center px-4 py-3">{t('entries.colActions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -240,43 +297,39 @@ export const Entries: React.FC = () => {
                       <td className="px-4 py-3"><div className="font-medium text-gray-800 whitespace-nowrap">{e.customerName}</div><div className="text-xs text-gray-400">{e.shopName}</div></td>
                       <td className="px-4 py-3">
                         <Badge variant={ENTRY_TYPE_BADGE[e.entryType] || 'gray'}>
-                          {e.entryType === 'opening_balance' ? 'Stock Position' : e.entryType.replace(/_/g, ' ')}
+                          {e.entryType === 'opening_balance' ? t('dispatch.openingBal') : 
+                           e.entryType === 'dispatch' ? t('dispatch.dispatch') :
+                           e.entryType === 'return' ? t('dispatch.return') :
+                           e.entryType === 'external_source' ? t('guide.entries.type.external') :
+                           e.entryType.replace(/_/g, ' ')}
                         </Badge>
-                        {e.isExternalSource && (<div className="text-xs text-purple-600 mt-0.5">via {e.sourceName}</div>)}
                       </td>
-                      {(() => {
-                        const otherSrc = e.isExternalSource
-                          ? (e.externalBoxCount ?? 0)
-                          : (e.openingStockSources ?? []).reduce((s, src) => s + (src.quantity || 0), 0);
-                        const totalBoxes = e.currentQuantity + otherSrc - e.boxesReturned;
-                        return (
-                          <>
-                            {e.entryType === 'opening_balance' ? (
-                              <td className="px-4 py-3 text-right font-extrabold text-emerald-700 text-base" title="Live stock count">{liveStockTotal ?? e.currentQuantity}</td>
-                            ) : (
-                              <td className="px-4 py-3 text-right font-extrabold text-blue-900 text-base">{e.currentQuantity}</td>
-                            )}
-                            <td className="px-4 py-3 text-right text-indigo-600 font-medium">{otherSrc}</td>
-                            <td className="px-4 py-3 text-right text-emerald-700 font-medium">{e.boxesReturned}</td>
-                            <td className="px-4 py-3 text-right font-bold text-gray-800 text-base">{totalBoxes < 0 ? 0 : totalBoxes}</td>
-                            <td className="px-4 py-3 text-right"><span className={`font-bold ${totalBoxes > 0 ? 'text-blue-800' : 'text-green-600'}`}>{totalBoxes < 0 ? 0 : totalBoxes}</span></td>
-                          </>
-                        );
-                      })()}
+                      <td className="px-4 py-3 text-right font-medium text-gray-800">
+                        {cumulativeData[e.id]?.totalSent ?? 0}
+                      </td>
+                      <td className="px-4 py-3 text-right text-orange-600 font-medium">
+                        {cumulativeData[e.id]?.totalReturned ?? 0}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-bold ${
+                          (cumulativeData[e.id]?.balance ?? 0) > 0 ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'
+                        }`}>
+                          {cumulativeData[e.id]?.balance ?? 0}
+                        </span>
+                      </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-center gap-1">
                           <button onClick={() => navigate(`/dispatch?edit=${e.id}`)} title="Edit entry" className="p-1.5 rounded-lg text-gray-400 hover:text-blue-700 hover:bg-blue-50 transition-colors"><Pencil size={14} /></button>
                           {e.entryType !== 'opening_balance' && (
                             <>
                               <button onClick={() => handlePreviewReceipt(e)} title="Preview Customer Receipt" className="p-1.5 rounded-lg text-blue-400 hover:text-blue-800 hover:bg-blue-50 transition-colors"><Receipt size={14} /></button>
-                              <button onClick={() => handleDirectDownload(e)} title="Print Customer Receipt as PDF"
-                                className={`p-1.5 rounded-lg transition-colors ${isDone ? 'text-emerald-600 bg-emerald-50' : 'text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50'}`}>
+                              <button onClick={() => handleDownloadReceipt(e)} title="Download Customer Receipt"
+                                className={`p-1.5 rounded-lg transition-colors ${isDone ? 'text-teal-600 bg-teal-50' : 'text-teal-500 hover:text-teal-700 hover:bg-teal-50'}`}>
                                 {isDone ? <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg> : <FileDown size={14} />}
                               </button>
                               <button onClick={() => handleWhatsApp(e)} title="Send Receipt via WhatsApp" className="p-1.5 rounded-lg transition-colors text-green-500 hover:text-green-700 hover:bg-green-50"><MessageCircle size={14} /></button>
                             </>
                           )}
-                          <button onClick={() => setDeleteTarget(e)} title="Delete entry" className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"><Trash2 size={14} /></button>
                         </div>
                       </td>
                     </tr>
@@ -288,8 +341,6 @@ export const Entries: React.FC = () => {
         </div>
       </div>
 
-      <ConfirmModal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={handleDelete}
-        title={t('entries.deleteTitle')} message={`${t('entries.deleteMsg')} "${deleteTarget?.billNumber}"? ${t('entries.cantUndo')}`} confirmLabel={t('entries.delete')} variant="danger" />
 
       <ReceiptPreviewModal open={receiptOpen} entry={receiptEntry} customer={receiptCustomer} onClose={() => setReceiptOpen(false)} />
 

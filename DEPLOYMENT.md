@@ -9,12 +9,12 @@
 For a one-command deployment, use the automated script. It handles Steps 2–9 below automatically. 
 
 > [!TIP]
-> **If you are using the `FIT_Release_Set.zip`**, the script is already included in the root of the zip. Simply unzip to `C:\FIT` and run the command below.
+> **If you are using the `FIT_Release_Set` folder**, the script is already included in the root. Simply copy the folder content to `E:\FIT` and run the command below.
 
 Open PowerShell **as Administrator** from the project root:
 
 ```powershell
-.\deploy-production.ps1
+.\deploy-production.ps1 -InstallRoot "E:\FIT"
 ```
 
 **Optional flags:**
@@ -120,18 +120,18 @@ pm2 --version
 ### 2.1 Prepare the Application Files
 
 **Option A: Using the Release Bundle (Recommended)**
-1. Copy `FIT_Release_Set.zip` to the production PC.
-2. Extract the contents to `C:\FIT`.
-3. Open PowerShell as Administrator in `C:\FIT`.
+1. Copy the `FIT_Release_Final` folder to the production PC.
+2. Place the contents in `E:\FIT`.
+3. Open PowerShell as Administrator in `E:\FIT`.
 
 **Option B: Cloning from Source**
 ```powershell
-mkdir C:\FIT -Force
-cd C:\FIT
+mkdir E:\FIT -Force
+cd E:\FIT
 git clone <your-repo-url> .
 ```
 
-If you're deploying from a local copy instead of a remote repo, simply copy the project folder contents to `C:\FIT`.
+If you're deploying from a local copy instead of a remote repo, simply copy the project folder contents to `E:\FIT`.
 
 ### 2.2 Start MySQL with Docker
 
@@ -208,7 +208,7 @@ Choose **one** of the two options below based on your deployment scenario:
 #### 3A.1 Create logs directory
 
 ```powershell
-mkdir C:\FIT\server\logs -Force
+mkdir E:\FIT\server\logs -Force
 ```
 
 #### 3A.2 Start the backend with PM2
@@ -262,7 +262,7 @@ pm2 monit                      # Real-time monitoring dashboard
 #### 3B.1 Create logs directory
 
 ```powershell
-mkdir C:\FIT\server\logs -Force
+mkdir E:\FIT\server\logs -Force
 ```
 
 #### 3B.2 Install the service
@@ -278,13 +278,13 @@ In the NSSM GUI dialog that opens, fill in:
 | Tab | Field | Value |
 |-----|-------|-------|
 | **Application** | Path | `C:\Program Files\nodejs\node.exe` (adjust if installed elsewhere) |
-| **Application** | Startup directory | `C:\FIT\server` |
+| **Application** | Startup directory | `E:\FIT\server` |
 | **Application** | Arguments | `dist\index.js` |
 | **Details** | Display name | `FIT Backend API` |
 | **Details** | Description | `FIT Application Express.js Backend Server` |
 | **Log on** | This account | `NT AUTHORITY\NetworkService` (or your user account) |
-| **I/O** | Output (stdout) | `C:\FIT\server\logs\stdout.log` |
-| **I/O** | Error (stderr) | `C:\FIT\server\logs\stderr.log` |
+| **I/O** | Output (stdout) | `E:\FIT\server\logs\stdout.log` |
+| **I/O** | Error (stderr) | `E:\FIT\server\logs\stderr.log` |
 
 Click **Install service**.
 
@@ -445,7 +445,7 @@ The application includes multiple handlers, but **`ShareOnWhatsApp.ps1`** is the
 Open `C:\FIT\scripts\RegisterProtocol.ps1` and verify the script path matches your installation:
 
 ```powershell
-$ScriptPath = "C:\FIT\scripts\ShareOnWhatsApp.ps1"
+$ScriptPath = "E:\FIT\scripts\ShareOnWhatsApp.ps1"
 ```
 
 ### 5.3 Run `RegisterProtocol.ps1` as Administrator
@@ -453,7 +453,7 @@ $ScriptPath = "C:\FIT\scripts\ShareOnWhatsApp.ps1"
 Open PowerShell **as Administrator** and run:
 
 ```powershell
-Set-Location C:\FIT\scripts
+Set-Location E:\FIT\scripts
 .\RegisterProtocol.ps1
 ```
 
@@ -505,7 +505,7 @@ server {
     ssl_certificate_key C:/nginx/conf/server.key;
 
     location / {
-        root   C:/FIT/dist;
+        root   E:/FIT/dist;
         index  index.html;
         try_files $uri $uri/ /index.html;
     }
@@ -585,14 +585,14 @@ Docker Desktop auto-starts containers that were running before shutdown. If not,
 
 ```powershell
 # C:\FIT\start-mysql.ps1
-Set-Location C:\FIT
+Set-Location E:\FIT
 docker compose up -d
 ```
 
 Register it as a scheduled task:
 
 ```powershell
-$action = New-ScheduledTaskAction -Execute "docker" -Argument "compose up -d" -WorkingDirectory "C:\FIT"
+$action = New-ScheduledTaskAction -Execute "docker" -Argument "compose up -d" -WorkingDirectory "E:\FIT"
 $trigger = New-ScheduledTaskTrigger -AtStartup
 Register-ScheduledTask -TaskName "FIT-MySQL" -Action $action -Trigger $trigger -RunLevel Highest
 ```
@@ -638,8 +638,8 @@ Register a Windows Scheduled Task for daily automated backups:
 ```powershell
 $action  = New-ScheduledTaskAction `
     -Execute "powershell.exe" `
-    -Argument "-ExecutionPolicy Bypass -File C:\FIT\backup-restore.ps1 -Action backup" `
-    -WorkingDirectory "C:\FIT"
+    -Argument "-ExecutionPolicy Bypass -File E:\FIT\backup-restore.ps1 -Action backup" `
+    -WorkingDirectory "E:\FIT"
 $trigger = New-ScheduledTaskTrigger -Daily -At "02:00AM"
 Register-ScheduledTask -TaskName "FIT-DailyBackup" -Action $action -Trigger $trigger -RunLevel Highest
 ```
@@ -707,17 +707,17 @@ pm2 logs fit-backend --lines 50
 pm2 monit
 
 # Rebuild & redeploy frontend (no Nginx)
-cd C:\FIT; npm run build; pm2 restart fit-backend
+cd E:\FIT; npm run build; pm2 restart fit-backend
 
 # Rebuild & redeploy frontend (with Nginx)
-cd C:\FIT; npm run build; cd C:\nginx; .\nginx.exe -s reload
+cd E:\FIT; npm run build; cd C:\nginx; .\nginx.exe -s reload
 
 # Check all services
 pm2 status
 docker ps
 
 # Update deployment (pull new code)
-cd C:\FIT
+cd E:\FIT
 git pull
 npm install; npm run build                         # Frontend
 cd server; npm install; npx tsc; cd ..             # Backend
@@ -741,7 +741,7 @@ nssm status fit-backend
 docker ps
 
 # Update deployment (pull new code)
-cd C:\FIT
+cd E:\FIT
 git pull
 npm install; npm run build                         # Frontend
 cd server; npm install; npx tsc; cd ..             # Backend
@@ -763,7 +763,7 @@ pm2 logs fit-backend --lines 100
 
 # If the process is errored, delete and re-add
 pm2 delete fit-backend
-cd C:\FIT\server
+cd E:\FIT\server
 pm2 start dist/index.js --name fit-backend
 pm2 save
 ```
@@ -790,10 +790,10 @@ nssm status fit-backend
 
 ```powershell
 # Verify dist/ folder exists and is non-empty
-dir C:\FIT\dist
+dir E:\FIT\dist
 
 # Rebuild if needed
-cd C:\FIT; npm run build
+cd E:\FIT; npm run build
 
 # Restart backend (it re-detects the dist/ folder on startup)
 pm2 restart fit-backend        # if using PM2
