@@ -191,8 +191,8 @@ export const Architecture: React.FC = () => {
                   name: 'Box Entry / Dispatch Module',
                   path: 'src/pages/Dispatch.tsx + Entries.tsx',
                   color: 'bg-orange-50 text-orange-700',
-                  desc: 'Core business module. Captures all box movements including dispatch, returns, opening balances, and external source boxes.',
-                  features: ['5 entry types (dispatch, return, opening, forward, external)', 'Auto-calculated balance boxes', 'External source with source master lookup', 'Edit existing entries', 'PDF bill generation + WhatsApp share'],
+                  desc: 'Core business module. Captures all box movements including dispatch, returns, stock positions, and fish varieties.',
+                  features: ['3 entry modes (Stock Position, Dispatch, Return)', 'Auto-calculated balance boxes', 'Variety-specific stock tracking', 'Edit existing entries', 'PDF bill generation + WhatsApp share'],
                 },
                 {
                   icon: <BarChart3 size={20} />,
@@ -264,7 +264,7 @@ export const Architecture: React.FC = () => {
                     {[
                       { key: 'customer', entity: 'Customer', desc: 'Customer master — name, shop, mobile, email, address' },
                       { key: 'inventory_source', entity: 'InventorySource', desc: 'Fish Varieties — type, contact, mobile' },
-                      { key: 'box_entry', entity: 'BoxEntry', desc: 'All box movements — dispatch, return, balance, external' },
+                      { key: 'box_entry', entity: 'BoxEntry', desc: 'All box movements — Stock Position, dispatch, return' },
                       { key: 'app_settings', entity: 'AppSettings', desc: 'Company info, bill prefix, backup config' },
                       { key: 'audit_log', entity: 'AuditLog', desc: 'Change tracking — action, entity, summary, timestamp' },
                       { key: 'user', entity: 'User', desc: 'Authentication and authorization credentials' },
@@ -292,11 +292,11 @@ export const Architecture: React.FC = () => {
                     { field: 'billNumber', type: 'string', desc: 'Auto-sequenced bill number (BILL-0001)' },
                     { field: 'entryDate', type: 'YYYY-MM-DD', desc: 'Date of dispatch / entry' },
                     { field: 'customerId', type: 'UUID ref', desc: 'Foreign key → Customer.id' },
-                    { field: 'entryType', type: 'enum', desc: 'dispatch | return | opening_balance | balance_forward | external_source' },
+                    { field: 'entryType', type: 'enum', desc: 'dispatch | return | opening_balance (Stock Position)' },
                     { field: 'totalBoxesSent', type: 'number', desc: 'Cumulative boxes sent to customer' },
                     { field: 'currentQuantity', type: 'number', desc: 'Boxes dispatched in this entry' },
                     { field: 'boxesReturned', type: 'number', desc: 'Boxes returned from customer' },
-                    { field: 'balanceBoxes', type: 'number', desc: 'Auto-calc: totalBoxesSent − boxesReturned' },
+                    { field: 'balanceBoxes', type: 'number', desc: 'Auto-calc: totalAlreadySent + currentQuantity − boxesReturned' },
                     { field: 'driverName', type: 'string', desc: 'Delivery driver name' },
                     { field: 'vehicleNumber', type: 'string', desc: 'Vehicle registration number' },
                     { field: 'isExternalSource', type: 'boolean', desc: 'Flag for third-party source boxes' },
@@ -463,8 +463,8 @@ const DeploymentGuide: React.FC = () => {
           <p className="text-sm text-gray-700">Use the included PowerShell script to install and configure everything automatically:</p>
           <pre className="bg-gray-900 text-green-400 rounded-xl p-4 text-xs overflow-x-auto">{`# Open PowerShell as Administrator
 
-cd C:\\path\\to\\project
-.\\deploy-production.ps1`}</pre>
+cd E:\FIT
+.\deploy-production.ps1`}</pre>
           <div className="bg-blue-50 rounded-lg p-3 text-xs text-blue-800">
             <strong>What this does:</strong>
             <ul className="list-disc pl-4 mt-2 space-y-1">
@@ -483,7 +483,7 @@ cd C:\\path\\to\\project
       icon: <Database size={18} />,
       content: (
         <div className="space-y-3">
-          <p className="text-sm text-gray-700">Setup an automated daily backup routine mapping to C:\FIT\backups</p>
+          <p className="text-sm text-gray-700">Setup an automated daily backup routine mapping to E:\FIT\backups</p>
           <pre className="bg-gray-900 text-green-400 rounded-xl p-4 text-xs overflow-x-auto">{`# Register a daily scheduled backup task
 .\\backup-restore.ps1 -Action schedule
 

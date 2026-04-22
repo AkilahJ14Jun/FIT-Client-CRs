@@ -21,8 +21,8 @@ Open PowerShell **as Administrator** from the project root:
 
 | Flag | Purpose |
 |------|---------|
-| `-InstallRoot "D:\FIT"` | Install to a custom directory (default: `C:\FIT`) |
-| `-NginxRoot "D:\nginx"` | Custom Nginx location (default: `C:\nginx`) |
+| `-InstallRoot "E:\FIT"` | Install to a custom directory (default: `E:\FIT`) |
+| `-NginxRoot "E:\nginx"` | Custom Nginx location (default: `E:\nginx`) |
 | `-UseNSSM` | Use NSSM (Windows Services) instead of PM2 — for headless servers only |
 | `-SkipWhatsApp` | Skip WhatsApp `fitshare://` protocol registration |
 | `-SkipFirewall` | Skip Windows Firewall rule creation |
@@ -86,7 +86,7 @@ docker compose version
 ### 1.4 Download Nginx for Windows
 
 1. Download the stable Windows zip from <https://nginx.org/en/download.html>
-2. Extract the zip to `C:\nginx` (or your preferred location)
+2. Extract the zip to `E:\nginx` (or your preferred location)
 3. You will configure this later in Step 4
 
 > **Skip this step** if you're doing a simple single-machine deployment. The Express backend can serve the frontend directly on port 3001 — no Nginx needed.
@@ -136,7 +136,7 @@ If you're deploying from a local copy instead of a remote repo, simply copy the 
 ### 2.2 Start MySQL with Docker
 
 ```powershell
-cd C:\FIT
+cd E:\FIT
 docker compose up -d
 ```
 
@@ -155,7 +155,7 @@ docker ps
 ### 2.3 Build & Configure the Backend
 
 ```powershell
-cd C:\FIT\server
+cd E:\FIT\server
 ```
 
 The existing `.env` file already contains the correct defaults. If you changed credentials in `docker-compose.yml`, update `.env` to match:
@@ -183,14 +183,14 @@ This produces JavaScript output in `server/dist/`.
 ### 2.4 Build the Frontend
 
 ```powershell
-cd C:\FIT
+cd E:\FIT
 npm install
 npm run build
 ```
 
-The output will be in `C:\FIT\dist\`. The Express backend will automatically detect and serve these files in production. If you're also using Nginx, it can serve them instead (see Step 4).
+The output will be in `E:\FIT\dist\`. The Express backend will automatically detect and serve these files in production. If you're also using Nginx, it can serve them instead (see Step 4).
 
-> **Important:** The `dist/` folder must be at `C:\FIT\dist\` (sibling of the `server/` folder) for the backend to find it automatically.
+> **Important:** The `dist/` folder must be at `E:\FIT\dist\` (sibling of the `server/` folder) for the backend to find it automatically.
 
 ---
 
@@ -214,7 +214,7 @@ mkdir E:\FIT\server\logs -Force
 #### 3A.2 Start the backend with PM2
 
 ```powershell
-cd C:\FIT\server
+cd E:\FIT\server
 pm2 start dist/index.js --name fit-backend
 ```
 
@@ -340,7 +340,7 @@ Skip ahead to [Step 5: Register WhatsApp Automation](#step-5-register-whatsapp-a
 
 #### 4.1 Create the Nginx config
 
-Open the file `C:\nginx\conf\nginx.conf` in a text editor (run as Administrator) and replace its contents with:
+Open the file `E:\nginx\conf\nginx.conf` in a text editor (run as Administrator) and replace its contents with:
 
 ```nginx
 worker_processes  1;
@@ -388,7 +388,7 @@ http {
 #### 4.2 Test and start Nginx
 
 ```powershell
-cd C:\nginx
+cd E:\nginx
 .\nginx.exe -t
 ```
 
@@ -403,15 +403,15 @@ You should see `test is successful`. Start Nginx:
 > **PM2 (recommended for single-machine):**
 >
 > ```powershell
-> pm2 start C:\nginx\nginx.exe --name fit-nginx
+> pm2 start E:\nginx\nginx.exe --name fit-nginx
 > pm2 save
 > ```
 >
 > **NSSM (for headless servers):**
 >
 > ```powershell
-> nssm install fit-nginx C:\nginx\nginx.exe
-> nssm set fit-nginx AppDirectory C:\nginx
+> nssm install fit-nginx E:\nginx\nginx.exe
+> nssm set fit-nginx AppDirectory E:\nginx
 > nssm set fit-nginx DisplayName "FIT Nginx Reverse Proxy"
 > nssm set fit-nginx Start SERVICE_AUTO_START
 > nssm start fit-nginx
@@ -420,7 +420,7 @@ You should see `test is successful`. Start Nginx:
 #### 4.3 Useful Nginx commands (Windows)
 
 ```powershell
-cd C:\nginx
+cd E:\nginx
 .\nginx.exe -s reload   # Reload config
 .\nginx.exe -s stop     # Stop Nginx
 ```
@@ -442,7 +442,7 @@ The application includes multiple handlers, but **`ShareOnWhatsApp.ps1`** is the
 
 ### 5.2 Update script paths in `RegisterProtocol.ps1`
 
-Open `C:\FIT\scripts\RegisterProtocol.ps1` and verify the script path matches your installation:
+Open `E:\FIT\scripts\RegisterProtocol.ps1` and verify the script path matches your installation:
 
 ```powershell
 $ScriptPath = "E:\FIT\scripts\ShareOnWhatsApp.ps1"
@@ -490,8 +490,8 @@ Navigate to `fitshare://test` in your browser. A hidden PowerShell window will b
 
 ```powershell
 openssl req -x509 -nodes -days 365 -newkey rsa:2048 `
-  -keyout C:\nginx\conf\server.key `
-  -out C:\nginx\conf\server.crt
+  -keyout E:\nginx\conf\server.key `
+  -out E:\nginx\conf\server.crt
 ```
 
 Then update `nginx.conf` to add an HTTPS server block:
@@ -501,8 +501,9 @@ server {
     listen       443 ssl;
     server_name  localhost;
 
-    ssl_certificate     C:/nginx/conf/server.crt;
-    ssl_certificate_key C:/nginx/conf/server.key;
+    ssl_certificate     E:/nginx/conf/server.crt;
+    ssl_certificate_key E:/nginx/conf/server.key;
+
 
     location / {
         root   E:/FIT/dist;
@@ -621,14 +622,14 @@ NSSM services (`fit-backend`, `fit-nginx`) auto-start on boot automatically sinc
 Use the included `backup-restore.ps1` script to manage database backups:
 
 ```powershell
-# Create a backup (saved to C:\FIT\backups\)
+# Create a backup (saved to E:\FIT\backups\)
 .\backup-restore.ps1 -Action backup
 
 # List available backups
 .\backup-restore.ps1 -Action list
 
 # Restore from a specific backup
-.\backup-restore.ps1 -Action restore -BackupFile "C:\FIT\backups\fit_db_2026-04-11_083000.sql"
+.\backup-restore.ps1 -Action restore -BackupFile "E:\FIT\backups\fit_db_2026-04-11_083000.sql"
 ```
 
 ### Scheduled Daily Backups
@@ -649,13 +650,13 @@ The script automatically keeps the latest **30 backups** and cleans up older one
 ### Manual Backup (without script)
 
 ```powershell
-docker exec fit_mysql_db mysqldump -uroot -proot --single-transaction fit_db > C:\FIT\backups\manual_backup.sql
+docker exec fit_mysql_db mysqldump -uroot -proot --single-transaction fit_db > E:\FIT\backups\manual_backup.sql
 ```
 
 ### Manual Restore (without script)
 
 ```powershell
-Get-Content C:\FIT\backups\manual_backup.sql -Raw | docker exec -i fit_mysql_db mysql -uroot -proot fit_db
+Get-Content E:\FIT\backups\manual_backup.sql -Raw | docker exec -i fit_mysql_db mysql -uroot -proot fit_db
 # Restart the backend after restore:
 pm2 restart fit-backend        # if using PM2
 # OR
@@ -692,7 +693,7 @@ nssm restart fit-backend       # if using NSSM
 |-----------|------|-------------------|--------------------|
 | MySQL (Docker) | 3308 (host) / 3306 (container) | `docker ps` / `docker logs fit_mysql_db` | same |
 | Backend + Frontend | 3001 (Production) | `pm2 status` / `pm2 logs fit-backend` | `nssm status fit-backend` |
-| Nginx *(optional)* | 80 / 443 | `C:\nginx\nginx.exe -s reload` | same |
+| Nginx *(optional)* | 80 / 443 | `E:\nginx\nginx.exe -s reload` | same |
 
 ### Common Tasks (PM2)
 
@@ -710,7 +711,7 @@ pm2 monit
 cd E:\FIT; npm run build; pm2 restart fit-backend
 
 # Rebuild & redeploy frontend (with Nginx)
-cd E:\FIT; npm run build; cd C:\nginx; .\nginx.exe -s reload
+cd E:\FIT; npm run build; cd E:\nginx; .\nginx.exe -s reload
 
 # Check all services
 pm2 status
@@ -734,7 +735,7 @@ pm2 restart fit-backend
 nssm restart fit-backend
 
 # View backend logs (last 50 lines)
-Get-Content C:\FIT\server\logs\stderr.log -Tail 50
+Get-Content E:\FIT\server\logs\stderr.log -Tail 50
 
 # Check all services
 nssm status fit-backend
@@ -772,7 +773,7 @@ pm2 save
 
 ```powershell
 # Check error logs
-Get-Content C:\FIT\server\logs\stderr.log -Tail 100
+Get-Content E:\FIT\server\logs\stderr.log -Tail 100
 nssm status fit-backend
 ```
 
@@ -781,8 +782,8 @@ nssm status fit-backend
 ```powershell
 # 1. MySQL not running → docker compose up -d
 # 2. Port 3001 already in use → netstat -ano | findstr 3001
-# 3. TypeScript not compiled → cd C:\FIT\server && npx tsc
-# 4. Missing .env → verify C:\FIT\server\.env exists with correct DB credentials
+# 3. TypeScript not compiled → cd E:\FIT\server && npx tsc
+# 4. Missing .env → verify E:\FIT\server\.env exists with correct DB credentials
 # 5. IPv6 Conflict → If "localhost" fails to connect, try using "127.0.0.1" in .env (Windows sometimes maps localhost to ::1)
 ```
 

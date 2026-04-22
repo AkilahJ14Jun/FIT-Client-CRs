@@ -1,6 +1,6 @@
 # FIT — Fish Inventory Tracking
 
-A full-stack inventory management application for tracking fish box distribution across customers and inventory sources. Manages stock positions, dispatches, returns, receipt generation, and multi-language reporting.
+A full-stack inventory management application for tracking fish box distribution across customers and fish varieties. Manages stock positions, dispatches, returns, receipt generation, and multi-language reporting.
 
 ---
 
@@ -31,7 +31,7 @@ A full-stack inventory management application for tracking fish box distribution
 FIT tracks fish box inventory for a trading business. Boxes are dispatched to customers and returned over time. The app records every movement as a **BoxEntry** (one of three types: `stock_position`, `dispatch`, or `return`) and computes a live balance per customer.
 
 **Key capabilities:**
-- Set an initial stock position per source (company-owned + external suppliers)
+- Set an initial stock position per variety (company-owned + external suppliers)
 - Record dispatches to named customers with bill numbers, driver, and vehicle info
 - Record returns from customers
 - Auto-generate and download a PDF customer receipt on every save
@@ -98,7 +98,7 @@ FIT tracks fish box inventory for a trading business. Boxes are dispatched to cu
 │   │   ├── Dashboard.tsx         # KPI cards + recent entries
 │   │   ├── Customers.tsx         # Customer CRUD + area assignment
 │   │   ├── CustomerAreas.tsx     # Area/zone management
-│   │   ├── Sources.tsx           # Inventory source CRUD
+│   │   ├── Sources.tsx           # Fish variety CRUD
 │   │   ├── Entries.tsx           # Full entry list with filters
 │   │   ├── Dispatch.tsx          # ★ Core form: Stock Position / Dispatch / Return
 │   │   ├── Reports.tsx           # Date-range reports + export
@@ -173,7 +173,7 @@ interface BoxEntry {
   totalBoxesSent: number;              // Cumulative sent count at time of entry
   currentQuantity: number;             // Boxes sent THIS transaction (0 for return)
   boxesReturned: number;               // Boxes returned THIS transaction
-  balanceBoxes: number;                // Computed: totalSent + currentQty + extBoxes − returned
+  balanceBoxes: number;                // Computed: totalAlreadySent + currentQty - returned
   driverName: string;
   vehicleNumber: string;
   isExternalSource: boolean;           // True if boxes sourced from a supplier
@@ -200,8 +200,11 @@ interface BoxEntry {
 ### Balance Formula
 
 ```
-balanceBoxes = totalBoxesSent + currentQuantity + externalBoxCount − boxesReturned
+balanceBoxes = totalAlreadySent + currentQuantity - boxesReturned
 ```
+
+> **Important:** In the current implementation, `currentQuantity` for a Dispatch entry is the sum of all boxes from selected fish varieties. For a Return entry, `currentQuantity` is 0 and only `boxesReturned` is recorded.
+
 
 This is recomputed on every save in `Dispatch.tsx → handleSaveDispatch()`.
 
@@ -211,7 +214,7 @@ This is recomputed on every save in `Dispatch.tsx → handleSaveDispatch()`.
 |---|---|---|
 | `Customer` | `customerName`, `shopName`, `mobile`, `areaId`, `totalSentCount` | `totalSentCount` is incremented on each dispatch and reset via `/api/customers/:id/reset-sent-count` |
 | `CustomerArea` | `areaName` | Optional grouping for customers (zones/regions) |
-| `InventorySource` | `sourceName`, `contactPerson`, `mobile` | External box suppliers referenced in dispatches and stock position entries |
+| `InventorySource` | `sourceName`, `contactPerson`, `mobile` | Fish Varieties (suppliers) referenced in dispatches and stock position entries |
 | `AppSettings` | `language`, `stockAlertThreshold`, `billPrefix`, `companyName`, … | Singleton row — only one row ever exists |
 | `AuditLog` | `action`, `entity`, `entityId`, `summary`, `timestamp` | Append-only; written server-side on every CUD operation |
 | `User` | `username`, `passwordHash`, `isSystemAdmin`, `isAdmin` | bcrypt-hashed passwords; two built-in users seeded on first run |
@@ -583,12 +586,11 @@ All values have hardcoded defaults matching the Docker Compose config, so the ap
 ### Stock Balance Calculation
 
 ```
-balanceBoxes = totalBoxesSent + currentQuantity + externalBoxCount − boxesReturned
+balanceBoxes = totalAlreadySent + currentQuantity - boxesReturned
 ```
 
-- `totalBoxesSent` = `Customer.totalSentCount` at the moment of the entry (snapshot)
-- `currentQuantity` = boxes sent in THIS transaction (0 on Return)
-- `externalBoxCount` = boxes sourced from an external supplier in THIS transaction (0 if none)
+- `totalAlreadySent` = `Customer.totalSentCount` at the moment of the entry (snapshot)
+- `currentQuantity` = boxes sent in THIS transaction (sum of variety counts)
 - `boxesReturned` = boxes returned in THIS transaction
 
 The result is stored as `BoxEntry.balanceBoxes` and displayed in the UI.

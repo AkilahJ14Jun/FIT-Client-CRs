@@ -44,7 +44,7 @@ interface Props {
 const ENTRY_TYPE_META: Record<string, { label: string; colour: string; bg: string }> = {
   dispatch:        { label: 'BOX DISPATCH',   colour: 'text-blue-800',   bg: 'bg-blue-100'   },
   return:          { label: 'BOX RETURN',      colour: 'text-green-800',  bg: 'bg-green-100'  },
-  opening_balance: { label: 'OPENING BALANCE', colour: 'text-yellow-800', bg: 'bg-yellow-100' },
+  opening_balance: { label: 'STOCK POSITION', colour: 'text-yellow-800', bg: 'bg-yellow-100' },
   balance_forward: { label: 'BALANCE FORWARD', colour: 'text-purple-800', bg: 'bg-purple-100' },
   external_source: { label: 'EXTERNAL SOURCE', colour: 'text-red-800',    bg: 'bg-red-100'    },
 };

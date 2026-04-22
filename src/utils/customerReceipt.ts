@@ -86,7 +86,7 @@ export function entryTypeLabel(type: string): string {
   const map: Record<string, string> = {
     dispatch: 'BOX DISPATCH',
     return: 'BOX RETURN',
-    opening_balance: 'OPENING BALANCE',
+    opening_balance: 'STOCK POSITION',
     balance_forward: 'BALANCE FORWARD',
     external_source: 'FISH VARIETY',
   };
