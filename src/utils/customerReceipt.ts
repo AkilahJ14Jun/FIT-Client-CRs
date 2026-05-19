@@ -107,163 +107,22 @@ export async function downloadReceiptAsPDF(
   action: 'download' | 'open' | 'print' | 'base64' = 'download'
 ): Promise<string | void> {
   const settings = await SettingsDB.get();
-  const companyName = settings.companyName || 'MC & SONS FISH COMPANY';
-  const companyAddress = settings.companyAddress || '';
-  const companyPhone = settings.companyPhone || '';
-  const traderName = settings.traderName || companyName;
-
-  const billDate = format(new Date(entry.entryDate), 'dd-MM-yyyy');
-  const printedAt = format(new Date(), 'hh:mm:ss a');
-
-  // ── Box calculations ──────────────────────────────────────────────────────
-  // Use history summary to get the correct 'Already Sent' (Previous Balance)
-  const history = await CustomerDB.getHistorySummary(customer.id, entry.billNumber);
-  const previousBalanceBox = history.cumulativeBalance;
-  const todayFishBox = entry.currentQuantity; 
-  const totalBox = previousBalanceBox + todayFishBox;
-  const totalBalanceBox = Math.max(0, totalBox - entry.boxesReturned);
-
-  // ── External sources for footer notes ─────────────────────────────────────
-  const externalSources: Array<{ name: string; qty: number }> = [];
-  if (entry.openingStockSources && entry.openingStockSources.length > 0) {
-    for (const src of entry.openingStockSources) {
-      externalSources.push({ name: src.sourceName, qty: src.quantity });
-    }
-  } else if (entry.isExternalSource && entry.sourceName) {
-    externalSources.push({ name: entry.sourceName, qty: entry.externalBoxCount ?? 0 });
-  }
-
-  const ownQty = entry.companyOwnQuantity ?? entry.currentQuantity;
-
-  // ── jsPDF setup ───────────────────────────────────────────────────────────
+  
+  // A4 size: 210mm x 297mm
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-  const PW = 210;
-  const ML = 14;
-  const MR = 14;
-  const CW = PW - ML - MR; // 182 mm
-  let y = 10;
 
-  // ─── HEADER — bordered company box ───────────────────────────────────────
-  // Measure how many lines the address needs
-  const addrLines = companyAddress
-    ? doc.setFontSize(8.5).splitTextToSize(companyAddress, CW - 10) as string[]
-    : [];
-  const headerH = 14 + (addrLines.length > 0 ? addrLines.length * 5 + 2 : 0);
+  // Render the receipt twice on the same A4 page
+  // First receipt at the top
+  await renderReceiptContent(doc, 10, entry, customer, settings);
 
-  doc.setDrawColor(0, 0, 0);
-  doc.setLineWidth(1.0);
-  doc.rect(ML, y, CW, headerH);
+  // Separation line/gap
+  doc.setDrawColor(200, 200, 200);
+  doc.setLineDashPattern([2, 2], 0);
+  doc.line(0, 148.5, 210, 148.5); // Middle of A4
+  doc.setLineDashPattern([], 0);
 
-  // Company name — large bold centred
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(17);
-  doc.setTextColor(0, 0, 0);
-  doc.text(companyName, PW / 2, y + 9, { align: 'center' });
-
-  // Address lines
-  if (addrLines.length > 0) {
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
-    addrLines.forEach((line: string, i: number) => {
-      doc.text(line, PW / 2, y + 14 + i * 5, { align: 'center' });
-    });
-  }
-  y += headerH + 6;
-
-  // ─── THIN DIVIDER ─────────────────────────────────────────────────────────
-  doc.setDrawColor(0, 0, 0);
-  doc.setLineWidth(0.3);
-  doc.line(ML, y, PW - MR, y);
-  y += 5;
-
-  // ─── BILL INFO — Name | Bill No | Bill Date (left-aligned) ───────────────
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9.5);
-  doc.setTextColor(0, 0, 0);
-  doc.text(`Name : ${customer.customerName || '—'}`, ML, y);
-  doc.text(`Bill No : ${entry.billNumber || '—'}`, ML, y + 6);
-  doc.text(`Bill Date : ${billDate}`, ML, y + 12);
-  y += 20;
-
-  // ─── MAIN TABLE — full width, no right logistics column ──────────────────
-  const tableRows: [string, string][] = [
-    ['Previous Balance Box', String(previousBalanceBox)],
-    ["Today's Fish Box", String(todayFishBox)],
-    ['Total Box', String(totalBox)],
-    ['Empty Box', ''], // left blank
-    ['Total Balance Box', String(totalBalanceBox)],
-  ];
-
-  autoTable(doc, {
-    startY: y,
-    margin: { left: ML, right: MR },
-    head: [],
-    body: tableRows,
-    theme: 'grid',
-    styles: {
-      fontSize: 10,
-      cellPadding: { top: 3.5, bottom: 3.5, left: 5, right: 5 },
-      textColor: [0, 0, 0],
-      lineColor: [0, 0, 0],
-      lineWidth: 0.35,
-      font: 'helvetica',
-    },
-    columnStyles: {
-      0: { fontStyle: 'bold', cellWidth: 120 },
-      1: { halign: 'center', fontStyle: 'bold', cellWidth: CW - 120 },
-    },
-    didParseCell: (data) => {
-      if (data.section === 'body' && data.row.index === 4) {
-        data.cell.styles.fontSize = 10.5;
-      }
-    },
-  });
-  y = (doc as any).lastAutoTable.finalY + 5;
-
-  // ─── NOTES — below the table ──────────────────────────────────────────────
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  doc.setTextColor(0, 0, 0);
-  doc.text(`NOTE : AS & Bros Box-${ownQty}`, ML, y);
-  y += 5;
-  if (externalSources.length > 0) {
-    doc.text(`WITHOUT BOX`, ML, y);
-    y += 5;
-    for (const src of externalSources) {
-      doc.text(`${src.name.toUpperCase()} (Variety) - ${src.qty}`, ML, y);
-      y += 5;
-    }
-  }
-  y += 4;
-
-  // ─── CONTACT + "FOR" LINE ─────────────────────────────────────────────────
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  const contactText = companyPhone
-    ? `Box Maintainer's Contact No : ${companyPhone}`
-    : `Box Maintainer's Contact No`;
-
-  // Underline the contact line (as in the reference)
-  const contactW = doc.getTextWidth(contactText);
-  doc.text(contactText, ML, y);
-  doc.setDrawColor(0, 0, 0);
-  doc.setLineWidth(0.3);
-  doc.line(ML, y + 1, ML + contactW, y + 1);
-
-  doc.setFont('helvetica', 'bold');
-  doc.text(`For ${traderName}`, PW - MR, y, { align: 'right' });
-
-  // ─── FOOTER — solid border line + "Developed by" / "Time" ────────────────
-  const pageH = 297;
-  const footerY = pageH - 12;
-  doc.setDrawColor(0, 0, 0);
-  doc.setLineWidth(0.5);
-  doc.line(ML, footerY, PW - MR, footerY);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
-  doc.setTextColor(60, 60, 60);
-  doc.text(`Developed by: ${companyName}`, ML, footerY + 5);
-  doc.text(`Time: ${printedAt}`, PW - MR, footerY + 5, { align: 'right' });
+  // Second receipt at the bottom
+  await renderReceiptContent(doc, 158.5, entry, customer, settings);
 
   // ─── Output Actions ────────────────────────────────────────────────────────
   try {
@@ -315,13 +174,174 @@ export async function downloadReceiptAsPDF(
   }
 }
 
+async function renderReceiptContent(doc: jsPDF, startY: number, entry: BoxEntry, customer: Customer, settings: any) {
+  const companyName = settings.companyName || 'MC & SONS FISH COMPANY';
+  const companyAddress = settings.companyAddress || '';
+  const traderName = settings.traderName || companyName;
+
+  const billDate = format(new Date(entry.entryDate), 'dd-MM-yyyy');
+  const printedAt = format(new Date(), 'hh:mm:ss a');
+
+  // ── Box calculations ──────────────────────────────────────────────────────
+  const history = await CustomerDB.getHistorySummary(customer.id, entry.billNumber);
+  const previousBalanceBox = history.cumulativeBalance;
+  const todayFishBox = entry.currentQuantity; 
+  const totalBox = previousBalanceBox + todayFishBox;
+  const totalBalanceBox = Math.max(0, totalBox - entry.boxesReturned);
+
+  // ── External sources for footer notes ─────────────────────────────────────
+  const externalSources: Array<{ name: string; qty: number }> = [];
+  if (entry.openingStockSources && entry.openingStockSources.length > 0) {
+    for (const src of entry.openingStockSources) {
+      externalSources.push({ name: src.sourceName, qty: src.quantity });
+    }
+  } else if (entry.isExternalSource && entry.sourceName) {
+    externalSources.push({ name: entry.sourceName, qty: entry.externalBoxCount ?? 0 });
+  }
+
+  const ownQty = entry.companyOwnQuantity ?? entry.currentQuantity;
+
+  const PW = 210;
+  const ML = 14;
+  const MR = 14;
+  const CW = PW - ML - MR;
+  let y = startY;
+
+  // ─── HEADER — bordered company box ───────────────────────────────────────
+  const addrLines = companyAddress
+    ? doc.setFontSize(8).splitTextToSize(companyAddress, CW - 60) as string[]
+    : [];
+  const headerH = Math.max(22, 14 + (addrLines.length * 4));
+
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.8);
+  doc.rect(ML, y, CW, headerH);
+
+  // Company name — centred
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.setTextColor(0, 0, 0);
+  doc.text(companyName, PW / 2, y + 7, { align: 'center' });
+
+  // Address lines
+  if (addrLines.length > 0) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    addrLines.forEach((line: string, i: number) => {
+      doc.text(line, PW / 2, y + 12 + i * 4, { align: 'center' });
+    });
+  }
+
+  // Header Mobile Numbers
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  // Phone 1 (Left)
+  if (settings.companyPhone) {
+    doc.text(`Ph: ${settings.companyPhone}`, ML + 4, y + headerH - 4);
+  }
+  // Phone 2 & 3 (Right Stacked)
+  if (settings.companyPhone2 || settings.companyPhone3) {
+    let phY = y + headerH - 8;
+    if (settings.companyPhone2) {
+      doc.text(`Ph: ${settings.companyPhone2}`, PW - MR - 4, phY, { align: 'right' });
+      phY += 4;
+    }
+    if (settings.companyPhone3) {
+      doc.text(`Ph: ${settings.companyPhone3}`, PW - MR - 4, phY, { align: 'right' });
+    }
+  }
+
+  y += headerH + 5;
+
+  // ─── BILL INFO — Name/Contact (Left) | Bill No/Date (Right) ───────────────
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  doc.setTextColor(0, 0, 0);
+  
+  // Left: Customer info
+  doc.text(`Name : ${customer.customerName || '—'}`, ML, y);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Contact: ${customer.mobile || '—'}`, ML, y + 6);
+
+  // Right: Bill info
+  doc.setFont('helvetica', 'bold');
+  doc.text(`Bill No : ${entry.billNumber || '—'}`, PW - MR, y, { align: 'right' });
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Bill Date : ${billDate}`, PW - MR, y + 6, { align: 'right' });
+
+  y += 12;
+
+  // ─── MAIN TABLE ───────────────────────────────────────────────────────────
+  const returnedBoxesLabel = entry.boxesReturned > 0 && externalSources.length > 0 && entry.entryType === 'return'
+    ? `Boxes Returned\n(${externalSources.map((s) => `${s.name}: ${s.qty}`).join(', ')})`
+    : 'Boxes Returned';
+
+  const tableRows: [string, string][] = [
+    ['Previous Balance Box', String(previousBalanceBox)],
+    ["Today's Fish Box", String(todayFishBox)],
+    ['Total Box', String(totalBox)],
+    [returnedBoxesLabel, entry.boxesReturned > 0 ? String(entry.boxesReturned) : ''], 
+    ['Total Balance Box', String(totalBalanceBox)],
+  ];
+
+  autoTable(doc, {
+    startY: y,
+    margin: { left: ML, right: MR },
+    head: [],
+    body: tableRows,
+    theme: 'grid',
+    styles: {
+      fontSize: 9,
+      cellPadding: { top: 2.5, bottom: 2.5, left: 4, right: 4 },
+      textColor: [0, 0, 0],
+      lineColor: [0, 0, 0],
+      lineWidth: 0.3,
+      font: 'helvetica',
+    },
+    columnStyles: {
+      0: { fontStyle: 'bold', cellWidth: 120 },
+      1: { halign: 'center', fontStyle: 'bold', cellWidth: CW - 120 },
+    },
+  });
+  y = (doc as any).lastAutoTable.finalY + 4;
+
+  // ─── NOTES ────────────────────────────────────────────────────────────────
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  const noteText = `NOTE : AS & Bros Box-${ownQty}`;
+  if (entry.entryType === 'dispatch' && externalSources.length > 0) {
+    const varietyBracket = `(${externalSources.map((s) => `${s.name}: ${s.qty}`).join(', ')})`;
+    doc.text(noteText, ML, y);
+    doc.text(varietyBracket, ML, y + 4);
+    y += 9.5;
+  } else {
+    doc.text(noteText, ML, y);
+    y += 6;
+  }
+
+  // ─── FOOTER ───────────────────────────────────────────────────────────────
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.text(`For ${traderName}`, PW - MR, y, { align: 'right' });
+
+  const footerY = startY + 128; // Position relative to receipt start
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.4);
+  doc.line(ML, footerY, PW - MR, footerY);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(60, 60, 60);
+  doc.text(`Developed by: ${companyName}`, ML, footerY + 4);
+  doc.text(`Time: ${printedAt}`, PW - MR, footerY + 4, { align: 'right' });
+}
+
 // ─── IFRAME PRINT FALLBACK (kept for backward compatibility) ──────────────────
 
 export async function downloadCustomerReceipt(
   entry: BoxEntry,
   customer: Customer,
 ): Promise<void> {
-  return downloadReceiptAsPDF(entry, customer);
+  await downloadReceiptAsPDF(entry, customer);
 }
 
 // ─── WHATSAPP PAYLOAD BUILDER ─────────────────────────────────────────────────
@@ -352,10 +372,10 @@ export async function buildWhatsAppPayload(
 
   const noteLines = [
     `AS & Bros Box-${ownQty}`,
-    ...(externalSources.length > 0
-      ? [`WITHOUT BOX`, ...externalSources.map((s) => `${s.name.toUpperCase()} - ${s.qty}`)]
-      : []),
   ];
+  if (entry.entryType === 'dispatch' && externalSources.length > 0) {
+    noteLines.push(`(${externalSources.map((s) => `${s.name}: ${s.qty}`).join(', ')})`);
+  }
 
   const lines = [
     `🐟 *FIT – Fish Inventory Tracking*`,
@@ -368,6 +388,7 @@ export async function buildWhatsAppPayload(
     `📦 Previous Balance Box : *${previousBalanceBox}*`,
     `📤 Today's Fish Box     : *${todayFishBox}*`,
     `📊 Total Box            : *${totalBox}*`,
+    `↩️ Boxes Returned       : *${entry.boxesReturned}*` + (entry.boxesReturned > 0 && externalSources.length > 0 && entry.entryType === 'return' ? `\n   (${externalSources.map((s) => `${s.name}: ${s.qty}`).join(', ')})` : ''),
     `⚖️ Total Balance Box    : *${totalBalanceBox}*`,
     `━━━━━━━━━━━━━━━━━━━━━━━`,
     ``,
