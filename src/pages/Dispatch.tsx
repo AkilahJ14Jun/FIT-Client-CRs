@@ -1,6 +1,6 @@
 // FIT – Box Dispatch / Return / Opening Balance Entry Form
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Save, ArrowLeft, User, ExternalLink, Building2, Layers, Plus, Trash2 } from 'lucide-react';
 import { useTranslation } from '../i18n/TranslationProvider';
@@ -141,7 +141,7 @@ export const Dispatch: React.FC = () => {
 
   useEffect(() => {
     loadVarietyStock();
-  }, [loadVarietyStock]);
+  }, [loadVarietyStock, entryType]);
 
   // ── Load live stock position when switching to Stock Position for new entries ──
   useEffect(() => {
@@ -245,7 +245,9 @@ export const Dispatch: React.FC = () => {
 
   useEffect(() => {
     if (form.customerId) {
+      console.log(`[FIT] Fetching history for customer: ${form.customerId}`);
       CustomerDB.getHistorySummary(form.customerId, editId ? form.billNumber : undefined).then(summary => {
+        console.log(`[FIT] Received summary:`, summary);
         setHistoricalSummary(summary);
         setTempInitialTotal(String(summary.cumulativeBalance));
       });
@@ -257,17 +259,31 @@ export const Dispatch: React.FC = () => {
 
   const cumulativeSent = parseInt(tempInitialTotal) || 0;
 
+  // Sync boxesReturned with variety rows total in Return mode, and keep it 0 in Dispatch mode
+  useEffect(() => {
+    if (entryType === 'opening_balance') return;
+    const varietyTotal = form.externalSourceRows.reduce((s, r) => s + (parseInt(r.boxCount) || 0), 0);
+    if (isReturn) {
+      setForm(p => ({ ...p, boxesReturned: String(varietyTotal) }));
+    } else {
+      setForm(p => ({ ...p, boxesReturned: '0' }));
+    }
+  }, [isReturn, entryType, form.externalSourceRows]);
+
   // ── Balance Boxes (Dispatch / Return) ─────────────────────────────────────
   const balanceBoxes = useMemo(() => {
     // Calculate effective current quantity from variety rows
     const varietyTotal = form.externalSourceRows.reduce((s, r) => s + (parseInt(r.boxCount) || 0), 0);
     
-    // Total balance = (History Sent) + (Current Dispatched) - (Returned Today)
-    const totalSent = cumulativeSent + varietyTotal;
-    const returned = parseInt(form.boxesReturned) || 0;
-    
-    return Math.max(0, totalSent - returned);
-  }, [cumulativeSent, form.boxesReturned, form.externalSourceRows]);
+    if (isReturn) {
+      return Math.max(0, cumulativeSent - varietyTotal);
+    } else {
+      // Total balance = (History Sent) + (Current Dispatched) - (Returned Today)
+      const totalSent = cumulativeSent + varietyTotal;
+      const returned = parseInt(form.boxesReturned) || 0;
+      return Math.max(0, totalSent - returned);
+    }
+  }, [cumulativeSent, isReturn, form.boxesReturned, form.externalSourceRows]);
 
   // ── Opening Balance computed totals ───────────────────────────────────────
   const obSourceRows = ob.sourceRows;
@@ -315,6 +331,16 @@ export const Dispatch: React.FC = () => {
       form.externalSourceRows.forEach((r, i) => {
         if (!r.sourceId)                       e[`ext_src_${i}_id`]   = 'Select a variety';
         if (!r.boxCount || parseInt(r.boxCount) <= 0) e[`ext_src_${i}_count`] = 'Enter quantity > 0';
+        
+        // Stock validation
+        if (r.sourceId) {
+          const stock = isReturn && form.customerId
+            ? (historicalSummary.varietyTotals[r.sourceId] || 0)
+            : (varietyStock[r.sourceId] || 0);
+          if (parseInt(r.boxCount) > stock) {
+            e[`ext_src_${i}_count`] = `Value exceeds available stock (${stock})`;
+          }
+        }
       });
     }
     setFormErrors(e);
@@ -385,8 +411,8 @@ export const Dispatch: React.FC = () => {
           }).filter((s) => s.quantity > 0);
       
       const calculatedOwnQty = extSourceRows.reduce((s, r) => s + r.quantity, 0);
-      const numCurrentQty = calculatedOwnQty;
-      const numReturned   = parseInt(form.boxesReturned)   || 0;
+      const numCurrentQty = isReturn ? 0 : calculatedOwnQty;
+      const numReturned   = isReturn ? calculatedOwnQty : (parseInt(form.boxesReturned) || 0);
       const numTotalSent  = cumulativeSent;
       const computedBal   = Math.max(0, numTotalSent + numCurrentQty - numReturned);
 
@@ -462,7 +488,11 @@ export const Dispatch: React.FC = () => {
               key={entry.value}
               onClick={() => {
                 setEntryType(entry.value);
-                setForm((p) => ({ ...p, entryType: entry.value }));
+                setForm((p) => ({
+                  ...p,
+                  entryType: entry.value,
+                  externalSourceRows: [{ id: crypto.randomUUID(), sourceId: '', boxCount: '' }]
+                }));
               }}
               className={`flex flex-col items-center justify-center gap-1.5 py-4 px-3 rounded-xl border-2 font-semibold text-sm transition-all ${
                 entryType === entry.value
@@ -569,6 +599,8 @@ export const Dispatch: React.FC = () => {
                         </div>
                         <input
                           type="text"
+                          name={`ob-qty-${row.id}`}
+                          autoComplete="off"
                           value={row.quantity}
                           onKeyDown={(e) => {
                             if (['e', 'E', '.', '-', '+'].includes(e.key)) e.preventDefault();
@@ -714,7 +746,18 @@ export const Dispatch: React.FC = () => {
                   <Select
                     label={t('dispatch.customerSel')}
                     value={form.customerId}
-                    onChange={(e) => setF('customerId', e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      // CR FIX: Clear existing box counts immediately to ensure visual refresh
+                      setHistoricalSummary({ cumulativeBalance: 0, varietyTotals: {} });
+                      setTempInitialTotal('0');
+                      
+                      setForm((p) => ({
+                        ...p,
+                        customerId: val,
+                        externalSourceRows: [{ id: crypto.randomUUID(), sourceId: '', boxCount: '' }]
+                      }));
+                    }}
                     options={customerOpts}
                     placeholder="— Select Customer —"
                     error={formErrors.customerId}
@@ -767,8 +810,24 @@ export const Dispatch: React.FC = () => {
                   </p>
                 </div>
                 {/* Removing own inventory qty as requested */}
+                {isReturn ? (
+                  <div className="flex flex-col gap-1">
+                    <label className="text-sm font-medium text-gray-700">{t('dispatch.boxesReturnedReq')}</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={form.boxesReturned}
+                      readOnly={true}
+                      className="flex items-center justify-center h-[38px] px-3 rounded-lg border-2 font-extrabold text-lg transition-all border-orange-300 bg-orange-50 text-orange-800 cursor-not-allowed opacity-80"
+                    />
+                    <p className="text-xs text-gray-500 text-center">
+                      {cumulativeSent === 0 ? "No boxes were ever sent to this customer" : t('dispatch.returnedReqHint')}
+                    </p>
+                    {formErrors.boxesReturned && <p className="text-xs text-red-500 text-center mt-1">{formErrors.boxesReturned}</p>}
+                  </div>
+                ) : (
                   <Input
-                    label={isReturn ? t('dispatch.boxesReturnedReq') : t('dispatch.boxesReturned')}
+                    label={t('dispatch.boxesReturned')}
                     type="number"
                     min="0"
                     value={form.boxesReturned}
@@ -780,8 +839,9 @@ export const Dispatch: React.FC = () => {
                     className={cumulativeSent === 0 ? 'bg-gray-50 opacity-80' : ''}
                     error={formErrors.boxesReturned}
                     placeholder="0"
-                    hint={cumulativeSent === 0 ? "No boxes were ever sent to this customer" : (isReturn ? t('dispatch.returnedReqHint') : t('dispatch.returnedHint'))}
+                    hint={cumulativeSent === 0 ? "No boxes were ever sent to this customer" : t('dispatch.returnedHint')}
                   />
+                )}
                 <div className="flex flex-col gap-1">
                   <label className="text-sm font-medium text-gray-700">{t('dispatch.balanceBoxes')}</label>
                   <div className={`flex items-center justify-center h-[38px] px-3 rounded-lg border-2 font-extrabold text-lg ${
@@ -830,16 +890,16 @@ export const Dispatch: React.FC = () => {
               </div>
             </Card>
 
-            {/* ── External Source (Dispatch only, not Return) ─────────── */}
-            {!isReturn && (
-              <Card title={t('dispatch.externalSource')} subtitle={t('dispatch.externalSub')}>
+            {/* ── Variety Details (Dispatch and Return) ─────────── */}
+            {true && (
+              <Card title={isReturn ? t('dispatch.boxesReturned') : t('dispatch.externalSource')} subtitle={isReturn ? t('dispatch.returnedHint') : t('dispatch.externalSub')}>
                 <div className="space-y-4">
                   <div className="space-y-2">
                       {form.externalSourceRows.length > 0 && (
                         <>
                           <div className="flex flex-row items-center gap-3 py-2 mb-2 border-b border-gray-200">
                             <span className="flex-1 text-xs font-semibold text-gray-500 uppercase tracking-wide font-mono text-gray-400"># {t('src.srcName')}</span>
-                            <span className="w-32 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right translate-x-5">{t('dispatch.extBoxCount')}</span>
+                            <span className="w-32 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right translate-x-5">{isReturn ? t('dispatch.boxesReturned') : t('dispatch.extBoxCount')}</span>
                             <span className="w-9"></span>
                           </div>
 
@@ -851,7 +911,7 @@ export const Dispatch: React.FC = () => {
                               return (
                                 <div key={`hist-${srcId}`} className="flex flex-row items-center gap-3 py-1.5 opacity-80 bg-blue-50/30 rounded-lg px-2 mb-1 border border-blue-100/50">
                                   <span className="flex-1 text-sm text-blue-700/70 font-medium">
-                                    {s?.sourceName || 'Unknown'} <span className="text-[10px] uppercase font-bold ml-2 opacity-60">({t('entries.colAlreadySent')})</span>
+                                    {s?.sourceName || 'Unknown'} <span className="text-[10px] uppercase font-bold ml-2 opacity-60">({t('entries.colAlreadySent') || 'Already Sent'})</span>
                                   </span>
                                   <span className="w-32 text-sm font-black text-blue-800 text-right pr-2">{count}</span>
                                   <div className="w-9 flex justify-center">
@@ -868,7 +928,7 @@ export const Dispatch: React.FC = () => {
                           )}
                           {form.externalSourceRows.map((row, idx) => {
                             const isNewRow = row.sourceId === '';
-                            // CR FIX: Filter out zero stock items only for Dispatch mode
+                            // Filter out selected or unavailable varieties
                             const availableSources = sources.filter(
                               (s) => {
                                 const isAlreadyUsed = form.externalSourceRows.some((r, i) => i !== idx && r.sourceId === s.id);
@@ -876,14 +936,28 @@ export const Dispatch: React.FC = () => {
                                 if (entryType === 'dispatch') {
                                   return (varietyStock[s.id] || 0) > 0;
                                 }
+                                if (entryType === 'return') {
+                                  // Show varieties the customer actually holds. Fallback to all active if customer holds none.
+                                  const customerHasAnyVariety = Object.values(historicalSummary.varietyTotals).some(c => c > 0);
+                                  if (customerHasAnyVariety) {
+                                    return (historicalSummary.varietyTotals[s.id] || 0) > 0;
+                                  }
+                                  return s.isActive !== false;
+                                }
                                 return true;
                               }
                             );
                             const src = sources.find((s) => s.id === row.sourceId);
                             const displayName = src?.sourceName ?? (isNewRow ? '' : 'Unknown');
-                            const stock = varietyStock[row.sourceId] || 0;
+                            
+                            // For Dispatch, show the company's stock. For Return, show the customer's stock.
+                            const stock = isReturn && form.customerId
+                              ? (historicalSummary.varietyTotals[row.sourceId] || 0)
+                              : (varietyStock[row.sourceId] || 0);
+                              
                             const threshold = src?.stockThreshold || 0;
-                            const isLow = stock <= threshold;
+                            const isLow = !isReturn && !form.customerId && stock <= threshold;
+                            const isWithCustomerLabel = isReturn || !!form.customerId;
                             
                             return (
                             <div key={row.id} className="py-1 border-b border-gray-100 last:border-b-0">
@@ -894,7 +968,7 @@ export const Dispatch: React.FC = () => {
                                         value={row.sourceId}
                                         onChange={(e) => {
                                           const rows = [...form.externalSourceRows];
-                                          rows[idx] = { ...row, sourceId: e.target.value, boxCount: '0' };
+                                          rows[idx] = { ...row, sourceId: e.target.value, boxCount: '' };
                                           setForm(p => ({ ...p, externalSourceRows: rows }));
                                         }}
                                         className={`w-full rounded-lg border px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
@@ -912,6 +986,8 @@ export const Dispatch: React.FC = () => {
                                 </div>
                                 <input
                                   type="text"
+                                  name={`boxCount-${row.id}`}
+                                  autoComplete="off"
                                   value={row.boxCount}
                                   disabled={!row.sourceId}
                                   onKeyDown={(e) => {
@@ -919,10 +995,8 @@ export const Dispatch: React.FC = () => {
                                   }}
                                   onChange={(e) => {
                                     const val = e.target.value.replace(/[^0-9]/g, '');
-                                    const numVal = parseInt(val) || 0;
-                                    const finalVal = numVal > stock ? stock.toString() : val;
                                     const rows = [...form.externalSourceRows];
-                                    rows[idx] = { ...row, boxCount: finalVal };
+                                    rows[idx] = { ...row, boxCount: val };
                                     setForm(p => ({ ...p, externalSourceRows: rows }));
                                   }}
                                   className={`w-32 rounded-lg border px-3 py-1.5 text-sm text-right font-bold text-indigo-700 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
@@ -950,10 +1024,18 @@ export const Dispatch: React.FC = () => {
                               {row.sourceId && (
                                 <div className="flex justify-between px-1">
                                   <div className="text-[10px] text-gray-400">
-                                    {isLow && stock > 0 && <span className="text-amber-500 font-semibold italic">Low Stock Alert!</span>}
+                                    {!isReturn && isLow && stock > 0 && <span className="text-amber-500 font-semibold italic">Low Stock Alert!</span>}
                                   </div>
-                                  <div className={`text-xs font-bold ${isLow ? 'animate-blink-red' : 'text-emerald-600'}`}>
-                                    Available: {stock} boxes
+                                  <div className={`text-xs font-bold ${
+                                    parseInt(row.boxCount) > stock
+                                      ? 'text-red-600'
+                                      : (!isReturn && isLow)
+                                        ? 'animate-blink-red'
+                                        : isWithCustomerLabel
+                                          ? 'text-amber-600'
+                                          : 'text-emerald-600'
+                                  }`}>
+                                    Balance Available: {stock} boxes
                                   </div>
                                 </div>
                               )}
@@ -962,7 +1044,7 @@ export const Dispatch: React.FC = () => {
                           })}
                           {form.externalSourceRows.reduce((s, r) => s + (parseInt(r.boxCount) || 0), 0) > 0 && (
                             <div className="text-right text-sm text-gray-600 font-medium">
-                              {t('dispatch.currentQtySent')}: <span className="text-indigo-700 font-semibold">{form.externalSourceRows.reduce((s, r) => s + (parseInt(r.boxCount) || 0), 0)}</span>
+                              {isReturn ? t('dispatch.boxesReturned') : t('dispatch.currentQtySent')}: <span className="text-indigo-700 font-semibold">{form.externalSourceRows.reduce((s, r) => s + (parseInt(r.boxCount) || 0), 0)}</span>
                             </div>
                           )}
                         </>
