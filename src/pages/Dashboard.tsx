@@ -270,7 +270,7 @@ export const Dashboard: React.FC = () => {
                       </td>
                       <td className="px-5 py-3 font-semibold text-blue-800">{e.billNumber}</td>
                       <td className="px-5 py-3"><p className="font-medium text-gray-800">{e.customerName}</p><p className="text-xs text-gray-400">{e.shopName}</p></td>
-                      <td className="px-5 py-3"><Badge variant={ENTRY_TYPE_BADGE[e.entryType] || 'blue'}>{e.entryType.replace(/_/g, ' ')}</Badge></td>
+                      <td className="px-5 py-3"><Badge variant={ENTRY_TYPE_BADGE[e.entryType] || 'blue'}>{e.entryType === 'opening_balance' ? 'Stock entry' : e.entryType.replace(/_/g, ' ')}</Badge></td>
                       <td className="px-5 py-3 text-right font-bold text-gray-800">{e.totalBoxesSent}</td>
                       <td className="px-5 py-3 text-right font-bold text-emerald-700">{e.boxesReturned}</td>
                       <td className={`px-5 py-3 text-right font-bold ${e.balanceBoxes > 0 ? 'text-amber-700' : 'text-gray-400'}`}>{e.balanceBoxes}</td>

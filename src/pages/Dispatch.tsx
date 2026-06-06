@@ -781,6 +781,12 @@ export const Dispatch: React.FC = () => {
               </div>
             </Card>
 
+            {isReturn && form.customerId && cumulativeSent === 0 ? (
+              <div className="bg-red-50 text-red-600 p-4 rounded-xl border border-red-200 mt-4 text-center text-lg font-bold">
+                All boxes already returned by: {customers.find(c => c.id === form.customerId)?.customerName}
+              </div>
+            ) : (
+              <>
             {/* ── Box Movement ──────────────────────────────────────────── */}
             <Card
               title={t('dispatch.boxMovement')}
@@ -810,7 +816,7 @@ export const Dispatch: React.FC = () => {
                   </p>
                 </div>
                 {/* Removing own inventory qty as requested */}
-                {isReturn ? (
+                {isReturn && (
                   <div className="flex flex-col gap-1">
                     <label className="text-sm font-medium text-gray-700">{t('dispatch.boxesReturnedReq')}</label>
                     <input
@@ -825,22 +831,6 @@ export const Dispatch: React.FC = () => {
                     </p>
                     {formErrors.boxesReturned && <p className="text-xs text-red-500 text-center mt-1">{formErrors.boxesReturned}</p>}
                   </div>
-                ) : (
-                  <Input
-                    label={t('dispatch.boxesReturned')}
-                    type="number"
-                    min="0"
-                    value={form.boxesReturned}
-                    onKeyDown={(e) => {
-                      if (['e', 'E', '.', '-', '+'].includes(e.key)) e.preventDefault();
-                    }}
-                    onChange={(e) => setF('boxesReturned', e.target.value.replace(/[^0-9]/g, ''))}
-                    readOnly={cumulativeSent === 0}
-                    className={cumulativeSent === 0 ? 'bg-gray-50 opacity-80' : ''}
-                    error={formErrors.boxesReturned}
-                    placeholder="0"
-                    hint={cumulativeSent === 0 ? "No boxes were ever sent to this customer" : t('dispatch.returnedHint')}
-                  />
                 )}
                 <div className="flex flex-col gap-1">
                   <label className="text-sm font-medium text-gray-700">{t('dispatch.balanceBoxes')}</label>
@@ -994,7 +984,12 @@ export const Dispatch: React.FC = () => {
                                     if (['e', 'E', '.', '-', '+'].includes(e.key)) e.preventDefault();
                                   }}
                                   onChange={(e) => {
-                                    const val = e.target.value.replace(/[^0-9]/g, '');
+                                    let val = e.target.value.replace(/[^0-9]/g, '');
+                                    if (isReturn && form.customerId) {
+                                      if (parseInt(val) > stock) {
+                                        val = String(stock);
+                                      }
+                                    }
                                     const rows = [...form.externalSourceRows];
                                     rows[idx] = { ...row, boxCount: val };
                                     setForm(p => ({ ...p, externalSourceRows: rows }));
@@ -1071,6 +1066,8 @@ export const Dispatch: React.FC = () => {
               <span className="text-lg">📋</span>
               <p dangerouslySetInnerHTML={{ __html: t('dispatch.receiptNotice') }} />
             </div>
+            </>
+            )}
 
             {/* ── Actions ───────────────────────────────────────────────── */}
             <div className="flex justify-end gap-3 pb-6">
@@ -1079,7 +1076,7 @@ export const Dispatch: React.FC = () => {
                 icon={<Save size={16} />}
                 onClick={handleSave}
                 size="lg"
-                disabled={saving}
+                disabled={saving || (isReturn && form.customerId && cumulativeSent === 0)}
               >
                 {saving ? t('dispatch.saving') : editId ? t('dispatch.saveChanges') : t('dispatch.save')}
               </Button>

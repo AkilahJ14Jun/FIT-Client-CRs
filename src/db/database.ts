@@ -81,6 +81,8 @@ export interface AppSettings {
   companyName: string;
   companyAddress: string;
   companyPhone: string;
+  companyPhone2: string;
+  companyPhone3: string;
   companyEmail?: string;
   traderName?: string;
   gstNumber?: string;
@@ -112,6 +114,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   companyName: 'FIT – Fish Inventory Tracking',
   companyAddress: '',
   companyPhone: '',
+  companyPhone2: '',
+  companyPhone3: '',
   companyEmail: '',
   traderName: '',
   gstNumber: '',
@@ -133,6 +137,7 @@ const API = '/api';
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API}${path}`, {
     headers: { 'Content-Type': 'application/json' },
+    cache: 'no-store', // CR FIX: Disable browser caching for all API calls
     ...options,
   });
   if (!res.ok) {
@@ -170,7 +175,7 @@ export const SettingsDB = {
 
 export const CustomerDB = {
   async getAll(): Promise<Customer[]> {
-    return apiFetch<Customer[]>('/customers');
+    return apiFetch<Customer[]>(`/customers?t=${Date.now()}`);
   },
   async getActive(): Promise<Customer[]> {
     const all = await this.getAll();
@@ -178,7 +183,7 @@ export const CustomerDB = {
   },
   async getById(id: string): Promise<Customer | undefined> {
     try {
-      return await apiFetch<Customer>(`/customers/${id}`);
+      return await apiFetch<Customer>(`/customers/${id}?t=${Date.now()}`);
     } catch {
       return undefined;
     }
@@ -238,15 +243,18 @@ export const CustomerDB = {
     cumulativeBalance: number;
     varietyTotals: Record<string, number>;
   }> {
-    const allEntries = await apiFetch<BoxEntry[]>('/entries');
-    const customerEntries = allEntries
-      .filter(e => e.customerId === customerId && e.billNumber !== excludeBillNumber)
+    // CR FIX: Fetch ONLY entries for this customer, and add timestamp to bypass any proxy caching
+    const customerEntries = await apiFetch<BoxEntry[]>(`/entries/customer/${customerId}?t=${Date.now()}`);
+    
+    // Sort by date ascending to compute cumulative balance correctly
+    const filtered = customerEntries
+      .filter(e => e.billNumber !== excludeBillNumber)
       .sort((a, b) => a.entryDate.localeCompare(b.entryDate));
 
     let cumulativeBalance = 0;
     const varietyTotals: Record<string, number> = {};
 
-    for (const e of customerEntries) {
+    for (const e of filtered) {
       if (e.entryType === 'dispatch' || e.entryType === 'opening_balance') {
         const todaySent = e.currentQuantity || 0;
         cumulativeBalance += todaySent;
@@ -275,6 +283,10 @@ export const CustomerDB = {
         }
       }
     }
+    cumulativeBalance = Math.max(0, cumulativeBalance);
+    for (const key of Object.keys(varietyTotals)) {
+      varietyTotals[key] = Math.max(0, varietyTotals[key]);
+    }
 
     return { cumulativeBalance, varietyTotals };
   }
@@ -284,7 +296,7 @@ export const CustomerDB = {
 
 export const SourceDB = {
   async getAll(): Promise<InventorySource[]> {
-    return apiFetch<InventorySource[]>('/sources');
+    return apiFetch<InventorySource[]>(`/sources?t=${Date.now()}`);
   },
   async getActive(): Promise<InventorySource[]> {
     const all = await this.getAll();
@@ -292,7 +304,7 @@ export const SourceDB = {
   },
   async getById(id: string): Promise<InventorySource | undefined> {
     try {
-      return await apiFetch<InventorySource>(`/sources/${id}`);
+      return await apiFetch<InventorySource>(`/sources/${id}?t=${Date.now()}`);
     } catch {
       return undefined;
     }
@@ -331,10 +343,10 @@ export const SourceDB = {
 
 export const AreaDB = {
   async getAll(): Promise<CustomerArea[]> {
-    return apiFetch<CustomerArea[]>('/customer-areas');
+    return apiFetch<CustomerArea[]>(`/customer-areas?t=${Date.now()}`);
   },
   async getById(id: string): Promise<CustomerArea | undefined> {
-    try { return await apiFetch<CustomerArea>(`/customer-areas/${id}`); }
+    try { return await apiFetch<CustomerArea>(`/customer-areas/${id}?t=${Date.now()}`); }
     catch { return undefined; }
   },
   async create(data: Omit<CustomerArea, 'id' | 'createdAt' | 'updatedAt' | 'isActive'>): Promise<CustomerArea> {
@@ -359,11 +371,11 @@ export const AreaDB = {
 
 export const EntryDB = {
   async getAll(): Promise<BoxEntry[]> {
-    return apiFetch<BoxEntry[]>('/entries');
+    return apiFetch<BoxEntry[]>(`/entries?t=${Date.now()}`);
   },
   async getById(id: string): Promise<BoxEntry | undefined> {
     try {
-      return await apiFetch<BoxEntry>(`/entries/${id}`);
+      return await apiFetch<BoxEntry>(`/entries/${id}?t=${Date.now()}`);
     } catch {
       return undefined;
     }
@@ -430,7 +442,7 @@ export const EntryDB = {
     liveSources: Array<{ sourceId: string; sourceName: string; quantity: number }>;
     liveTotal: number;
   }> {
-    const all = await this.getAll();
+    const all = await apiFetch<BoxEntry[]>(`/entries?t=${Date.now()}`);
     // Find the most recent stock position entry
     const obEntries = all
       .filter((e) => e.entryType === 'opening_balance')
@@ -723,21 +735,24 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     StockAlertDB.getStockLevel(),
   ]);
   const today = new Date().toISOString().split('T')[0];
-  const todayEntries = entries.filter((e) => e.entryDate === today);
+  const txEntries = entries.filter((e) => e.entryType !== 'opening_balance');
+
+  const todayEntries = txEntries.filter((e) => e.entryDate === today);
 
   const d = new Date();
   d.setDate(d.getDate() - 1);
   const yesterday = d.toISOString().split('T')[0];
-  const yesterdayEntries = entries.filter((e) => e.entryDate === yesterday);
+  const yesterdayEntries = txEntries.filter((e) => e.entryDate === yesterday);
   const monthStart = today.slice(0, 8) + '01';
-  const monthEntries = entries.filter((e) => e.entryDate >= monthStart && e.entryDate <= today);
+  const monthEntries = txEntries.filter((e) => e.entryDate >= monthStart && e.entryDate <= today);
 
-  const totalBoxesSent     = entries.reduce((s, e) => s + e.totalBoxesSent + e.currentQuantity, 0);
-  const totalBoxesReturned = entries.reduce((s, e) => s + e.boxesReturned, 0);
-  const totalBalanceBoxes  = entries.reduce((s, e) => s + e.balanceBoxes, 0);
+  const totalBoxesSent     = txEntries.reduce((s, e) => s + e.totalBoxesSent + e.currentQuantity, 0);
+  const totalBoxesReturned = txEntries.reduce((s, e) => s + e.boxesReturned, 0);
+  const totalBalanceBoxes  = txEntries.reduce((s, e) => s + e.balanceBoxes, 0);
 
   const customerMap: Record<string, { name: string; shop: string; sent: number; balance: number }> = {};
-  entries.forEach((e) => {
+  txEntries.forEach((e) => {
+    if (!e.customerId) return; // Prevent entries with no customer ID from skewing the map
     if (!customerMap[e.customerId]) {
       customerMap[e.customerId] = { name: e.customerName || '', shop: e.shopName || '', sent: 0, balance: 0 };
     }
@@ -747,7 +762,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   const topCustomers = Object.values(customerMap).sort((a, b) => b.sent - a.sent).slice(0, 5);
 
   const monthlyMap: Record<string, { sent: number; returned: number }> = {};
-  entries.forEach((e) => {
+  txEntries.forEach((e) => {
     const month = e.entryDate.slice(0, 7);
     if (!monthlyMap[month]) monthlyMap[month] = { sent: 0, returned: 0 };
     monthlyMap[month].sent     += (e.totalBoxesSent + e.currentQuantity);
@@ -773,7 +788,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   return {
     totalCustomers: customers.length,
     totalSources: sourcesAll.length,
-    totalEntries: entries.length,
+    totalEntries: txEntries.length,
     totalBoxesSent,
     totalBoxesReturned,
     totalBalanceBoxes,
@@ -863,3 +878,7 @@ export const SystemDB = {
     });
   },
 };
+
+export function getEntryAreaName(entry: BoxEntry): string {
+  return '—';
+}

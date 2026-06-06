@@ -17,6 +17,26 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// ─── Error Handling & Logging ────────────────────────────────
+// Helper to wrap async routes and catch errors
+const catchAsync = (fn: Function) => (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  Promise.resolve(fn(req, res, next)).catch((err) => {
+    console.error(`[API Error] ${req.method} ${req.path}:`, err);
+    next(err);
+  });
+};
+
+// Global process-level error logging
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("[Fatal] Unhandled Rejection at:", promise, "reason:", reason);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("[Fatal] Uncaught Exception:", err);
+  // We don't exit here to let nodemon handle restarts if needed, 
+  // but now we at least see WHY it crashed.
+});
+
 // Helper to log audit
 async function logAudit(action: string, entity: string, entityId: string, summary: string) {
   const auditRepo = AppDataSource.getRepository(AuditLog);
@@ -296,6 +316,15 @@ app.get("/api/entries", async (req, res) => {
   res.json(entries);
 });
 
+app.get("/api/entries/customer/:customerId", catchAsync(async (req: express.Request, res: express.Response) => {
+  const repo = AppDataSource.getRepository(BoxEntry);
+  const entries = await repo.find({ 
+    where: { customerId: req.params.customerId },
+    order: { entryDate: "DESC" } 
+  });
+  res.json(entries);
+}));
+
 app.get("/api/entries/:id", async (req, res) => {
   const repo = AppDataSource.getRepository(BoxEntry);
   const entry = await repo.findOneBy({ id: req.params.id });
@@ -485,6 +514,17 @@ if (fs.existsSync(frontendDist)) {
     }
   });
 }
+
+// ─── Global Error Middleware ───────────────────────────────
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const status = err.status || 500;
+  const message = err.message || "Internal Server Error";
+  res.status(status).json({ 
+    error: message,
+    path: req.path,
+    method: req.method
+  });
+});
 
 AppDataSource.initialize()
   .then(async () => {

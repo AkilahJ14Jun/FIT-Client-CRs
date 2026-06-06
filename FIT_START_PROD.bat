@@ -6,6 +6,13 @@ echo Starting FIT Application (Consolidated Root Build)...
 
 REM 1. Ensure the PM2 process is running from the root dist
 echo Checking backend service (PM2)...
+if not exist "server\node_modules\express\" (
+    echo Backend dependencies missing or incomplete. Installing...
+    if exist "server\node_modules\" rmdir /s /q "server\node_modules"
+    cd server
+    npm install --omit=dev
+    cd ..
+)
 pm2 describe fit-backend >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
     echo Starting new PM2 process for backend...

@@ -38,7 +38,9 @@ export const Reports: React.FC = () => {
   const runReport = async () => {
     let data: import('../db/database').BoxEntry[] = [];
     if (reportType === 'all_customers_date_range') {
-      data = await EntryDB.getByDateRange(fromDate, toDate);
+      const allData = await EntryDB.getByDateRange(fromDate, toDate);
+      // Filter to only include dispatch and return entries
+      data = allData.filter(e => e.entryType === 'dispatch' || e.entryType === 'return');
     } else if (reportType === 'customer_date_range') {
       if (!customerId) return;
       data = await EntryDB.getByCustomerAndDateRange(customerId, fromDate, toDate);
@@ -51,18 +53,26 @@ export const Reports: React.FC = () => {
 
   const summary = useMemo(() => {
     if (!results) return null;
-    const totalSent = results.reduce((s, e) => s + e.totalBoxesSent, 0);
+    const totalSent = results.reduce((s, e) => s + e.currentQuantity, 0);
     const totalReturned = results.reduce((s, e) => s + e.boxesReturned, 0);
-    const totalBalance = results.reduce((s, e) => s + e.balanceBoxes, 0);
+    
     const byCustomer: Record<string, { name: string; shop: string; sent: number; returned: number; balance: number }> = {};
-    results.forEach((e) => {
+    
+    // Sort results by date so the last entry has the final balance
+    const sortedResults = [...results].sort((a, b) => new Date(a.entryDate).getTime() - new Date(b.entryDate).getTime());
+    
+    sortedResults.forEach((e) => {
+      if (e.entryType === 'opening_balance') return;
       if (!byCustomer[e.customerId]) {
         byCustomer[e.customerId] = { name: e.customerName || '', shop: e.shopName || '', sent: 0, returned: 0, balance: 0 };
       }
-      byCustomer[e.customerId].sent += e.totalBoxesSent;
+      byCustomer[e.customerId].sent += e.currentQuantity;
       byCustomer[e.customerId].returned += e.boxesReturned;
-      byCustomer[e.customerId].balance += e.balanceBoxes;
+      byCustomer[e.customerId].balance = e.balanceBoxes; // Last entry gives the latest balance
     });
+    
+    const totalBalance = Object.values(byCustomer).reduce((s, c) => s + c.balance, 0);
+    
     return { totalSent, totalReturned, totalBalance, byCustomer };
   }, [results]);
 
@@ -99,7 +109,7 @@ export const Reports: React.FC = () => {
 
     autoTable(doc, {
       startY: y + 2,
-      head: [['Date', 'Bill No', 'Customer', 'Shop', 'Type', 'Total Sent', 'Curr Qty', 'Returned', 'Balance', 'Driver', 'Vehicle', 'Description']],
+      head: [['Date', 'Bill No', 'Customer', 'Shop', 'Type', 'Prev. box count', 'Sent', 'Returned', 'Balance']],
       body: results.map((e) => [
         format(new Date(e.entryDate), 'dd MMM yyyy'),
         e.billNumber,
@@ -109,10 +119,7 @@ export const Reports: React.FC = () => {
         e.totalBoxesSent,
         e.currentQuantity,
         e.boxesReturned,
-        e.balanceBoxes,
-        e.driverName || '',
-        e.vehicleNumber || '',
-        e.description || '',
+        e.entryType === 'opening_balance' ? '—' : e.balanceBoxes,
       ]),
       headStyles: { fillColor: [13, 71, 161], textColor: 255, fontSize: 7 },
       bodyStyles: { fontSize: 7 },
@@ -335,12 +342,10 @@ export const Reports: React.FC = () => {
                       <th className="text-left px-4 py-3">{t('entries.colBill')}</th>
                       <th className="text-left px-4 py-3">{t('entries.colCustomer')}</th>
                       <th className="text-left px-4 py-3">{t('entries.colType')}</th>
-                      <th className="text-right px-4 py-3">{t('reports.totalSent')}</th>
-                      <th className="text-right px-4 py-3">{t('entries.colThisEntry')}</th>
+                      <th className="text-right px-4 py-3">Prev. box count</th>
+                      <th className="text-right px-4 py-3">Sent</th>
                       <th className="text-right px-4 py-3">{t('entries.colReturned')}</th>
                       <th className="text-right px-4 py-3">{t('entries.colBalance')}</th>
-                      <th className="text-left px-4 py-3">{t('entries.colDriver')}</th>
-                      <th className="text-left px-4 py-3">{t('dispatch.description')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
@@ -362,22 +367,21 @@ export const Reports: React.FC = () => {
                         <td className="px-4 py-3 text-right font-bold text-gray-800">{e.totalBoxesSent}</td>
                         <td className="px-4 py-3 text-right text-gray-600">{e.currentQuantity}</td>
                         <td className="px-4 py-3 text-right text-emerald-700">{e.boxesReturned}</td>
-                        <td className="px-4 py-3 text-right font-bold text-amber-700">{e.balanceBoxes}</td>
-                        <td className="px-4 py-3 text-gray-500 text-xs">{e.driverName || '—'}</td>
-                        <td className="px-4 py-3 text-gray-500 text-xs max-w-[180px] truncate">{e.description || '—'}</td>
+                        <td className="px-4 py-3 text-right font-bold text-amber-700">
+                          {e.entryType === 'opening_balance' ? '—' : e.balanceBoxes}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
                     <tr className="bg-gray-50 font-bold text-sm border-t-2 border-gray-200">
                       <td colSpan={4} className="px-4 py-3 text-gray-600">{t('reports.totals')}</td>
-                      <td className="px-4 py-3 text-right text-gray-800">{summary?.totalSent}</td>
+                      <td className="px-4 py-3 text-right text-gray-800">—</td>
                       <td className="px-4 py-3 text-right text-gray-600">
                         {results.reduce((s, e) => s + e.currentQuantity, 0)}
                       </td>
                       <td className="px-4 py-3 text-right text-emerald-700">{summary?.totalReturned}</td>
-                      <td className="px-4 py-3 text-right text-amber-700">{summary?.totalBalance}</td>
-                      <td colSpan={2} />
+                      <td className="px-4 py-3 text-right text-amber-700">—</td>
                     </tr>
                   </tfoot>
                 </table>

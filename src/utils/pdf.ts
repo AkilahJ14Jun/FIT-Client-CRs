@@ -7,125 +7,138 @@ import { format } from 'date-fns';
 
 export async function generateBillPDF(entry: BoxEntry, customer: Customer): Promise<jsPDF> {
   const settings = await SettingsDB.get();
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a5' });
+  // A4 size: 210mm x 297mm
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+  // Render the receipt twice on the same A4 page
+  // First receipt at the top
+  renderReceiptContent(doc, 10, entry, customer, settings);
+
+  // Separation line/gap
+  doc.setDrawColor(200, 200, 200);
+  doc.setLineDashPattern([2, 2], 0);
+  doc.line(0, 148.5, 210, 148.5); // Middle of A4
+  doc.setLineDashPattern([], 0);
+
+  // Second receipt at the bottom
+  renderReceiptContent(doc, 158.5, entry, customer, settings);
+
+  return doc;
+}
+
+function renderReceiptContent(doc: jsPDF, startY: number, entry: BoxEntry, customer: Customer, settings: any) {
+  const pageWidth = 210;
+  const margin = 15;
+  const contentWidth = pageWidth - (margin * 2);
 
   // ─── Header ───────────────────────────────────────────────────────────────
   doc.setFillColor(13, 71, 161);
-  doc.rect(0, 0, 148, 24, 'F');
+  doc.rect(0, startY - 10, pageWidth, 28, 'F');
 
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(14);
+  doc.setFontSize(16);
   doc.setFont('helvetica', 'bold');
-  doc.text(settings.companyName || 'FIT – Fish Inventory Tracking', 74, 10, { align: 'center' });
+  doc.text(settings.companyName || 'FIT – Fish Inventory Tracking', pageWidth / 2, startY, { align: 'center' });
+  
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
   if (settings.companyAddress) {
-    doc.text(settings.companyAddress, 74, 16, { align: 'center' });
-  }
-  if (settings.companyPhone) {
-    doc.text(`Ph: ${settings.companyPhone}${settings.gstNumber ? '  |  GST: ' + settings.gstNumber : ''}`, 74, 21, { align: 'center' });
+    doc.text(settings.companyAddress, pageWidth / 2, startY + 6, { align: 'center' });
   }
 
-  // ─── Bill title bar ────────────────────────────────────────────────────────
+  // Mobile numbers in header
+  doc.setFontSize(8);
+  // Phone 1 on Left
+  if (settings.companyPhone) {
+    doc.text(`Ph: ${settings.companyPhone}`, margin, startY + 12);
+  }
+  // Phone 2 & 3 on Right (stacked)
+  if (settings.companyPhone2 || settings.companyPhone3) {
+    let phoneY = startY + 12;
+    if (settings.companyPhone2) {
+      doc.text(`Ph: ${settings.companyPhone2}`, pageWidth - margin, phoneY, { align: 'right' });
+      phoneY += 4;
+    }
+    if (settings.companyPhone3) {
+      doc.text(`Ph: ${settings.companyPhone3}`, pageWidth - margin, phoneY, { align: 'right' });
+    }
+  }
+
+  // GST if present
+  if (settings.gstNumber) {
+    doc.text(`GST: ${settings.gstNumber}`, pageWidth / 2, startY + 12, { align: 'center' });
+  }
+
+  // ─── Title bar ────────────────────────────────────────────────────────────
+  let y = startY + 18;
   doc.setFillColor(230, 239, 255);
-  doc.rect(0, 24, 148, 8, 'F');
+  doc.rect(0, y, pageWidth, 8, 'F');
   doc.setTextColor(13, 71, 161);
   doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
-  doc.text('BOX DISPATCH BILL', 74, 30, { align: 'center' });
+  doc.text('BOX DISPATCH BILL', pageWidth / 2, y + 5.5, { align: 'center' });
 
-  // ─── Bill meta ────────────────────────────────────────────────────────────
+  // ─── Customer and Bill Meta (Parallel Layout) ─────────────────────────────
+  y += 15;
   doc.setTextColor(30, 30, 30);
-  doc.setFontSize(8.5);
-  let y = 38;
+  doc.setFontSize(9);
 
-  const metaRows = [
-    ['Bill No', entry.billNumber, 'Date', format(new Date(entry.entryDate), 'dd MMM yyyy')],
-    ['Driver', entry.driverName || '—', 'Vehicle', entry.vehicleNumber || '—'],
-  ];
-  metaRows.forEach(([l1, v1, l2, v2]) => {
-    doc.setFont('helvetica', 'bold');
-    doc.text(`${l1}:`, 10, y);
-    doc.setFont('helvetica', 'normal');
-    doc.text(v1, 30, y);
-    doc.setFont('helvetica', 'bold');
-    doc.text(`${l2}:`, 80, y);
-    doc.setFont('helvetica', 'normal');
-    doc.text(v2, 100, y);
-    y += 6;
-  });
-
-  // ─── Customer block ───────────────────────────────────────────────────────
-  y += 2;
-  doc.setFillColor(232, 240, 254);
-  doc.rect(8, y - 3, 132, 22, 'F');
+  // Left Side: Customer Info
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
-  doc.text('CUSTOMER DETAILS', 10, y + 1);
-  y += 5;
+  doc.text(customer.customerName, margin, y);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.text(`Name: ${customer.customerName}`, 10, y);
-  doc.text(`Shop: ${customer.shopName}`, 75, y);
-  y += 5;
-  doc.text(`Mobile: ${customer.mobile}`, 10, y);
-  if (customer.email) doc.text(`Email: ${customer.email}`, 75, y);
-  y += 5;
-  if (customer.address) {
-    doc.text(`Address: ${customer.address}`, 10, y);
-  }
+  doc.text(customer.mobile, margin, y + 5);
 
-  // ─── Box details table ────────────────────────────────────────────────────
-  y += 10;
+  // Right Side: Bill Info
+  doc.setFont('helvetica', 'bold');
+  doc.text(`Bill No: ${entry.billNumber}`, pageWidth - margin, y, { align: 'right' });
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Date: ${format(new Date(entry.entryDate), 'dd MMM yyyy')}`, pageWidth - margin, y + 5, { align: 'right' });
+
+  // ─── Table ────────────────────────────────────────────────────────────────
+  y += 12;
   autoTable(doc, {
     startY: y,
     head: [['Description', 'Value']],
     body: [
       ['Entry Type', entry.entryType.replace(/_/g, ' ').toUpperCase()],
       ['Total Boxes Sent (Cumulative)', String(entry.totalBoxesSent)],
-      ['Current Qty Dispatched — Own Inventory', String(entry.currentQuantity)],
+      ['Current Qty Dispatched', String(entry.currentQuantity)],
       ...(entry.isExternalSource
         ? [
             ['External Source', entry.sourceName || ''],
             ['External Box Count', String(entry.externalBoxCount ?? 0)],
           ]
         : []),
-      ['Total Boxes Sent (incl. External)', String(entry.totalBoxesSent + entry.currentQuantity + (entry.isExternalSource ? (entry.externalBoxCount ?? 0) : 0))],
       ['Boxes Returned', String(entry.boxesReturned)],
       ['Balance Boxes', String(entry.balanceBoxes)],
-      ['Description / Notes', entry.description || '—'],
+      ['Vehicle/Driver', `${entry.vehicleNumber || '—'} / ${entry.driverName || '—'}`],
     ],
     headStyles: { fillColor: [13, 71, 161], textColor: 255, fontSize: 8.5, fontStyle: 'bold' },
     bodyStyles: { fontSize: 8 },
     alternateRowStyles: { fillColor: [245, 248, 255] },
     columnStyles: {
-      0: { fontStyle: 'bold', cellWidth: 65, fillColor: [240, 245, 255] },
-      1: { cellWidth: 65 },
+      0: { fontStyle: 'bold', cellWidth: contentWidth / 2, fillColor: [240, 245, 255] },
+      1: { cellWidth: contentWidth / 2 },
     },
-    margin: { left: 8, right: 8 },
+    margin: { left: margin, right: margin },
   });
 
-  // ─── Signature area ───────────────────────────────────────────────────────
-  const finalY = (doc as any).lastAutoTable.finalY + 10;
-  doc.setFontSize(7.5);
-  doc.setTextColor(80, 80, 80);
-  doc.text('Receiver Signature: ________________________', 10, finalY);
-  doc.text('Authorised by: ________________________', 10, finalY + 8);
-
   // ─── Footer ───────────────────────────────────────────────────────────────
-  doc.setDrawColor(13, 71, 161);
-  doc.setLineWidth(0.3);
-  doc.line(8, finalY + 16, 140, finalY + 16);
+  const finalY = (doc as any).lastAutoTable.finalY + 8;
+  doc.setFontSize(7.5);
+  doc.setTextColor(100, 100, 100);
+  doc.text('Receiver Signature: ________________________', margin, finalY);
+  doc.text('Authorised by: ________________________', pageWidth - margin, finalY, { align: 'right' });
+
   doc.setFontSize(7);
-  doc.setTextColor(140, 140, 140);
+  doc.setTextColor(150, 150, 150);
   doc.text(
     `Generated by FIT – Fish Inventory Tracking System  |  ${format(new Date(), 'dd MMM yyyy HH:mm')}`,
-    74,
-    finalY + 20,
+    pageWidth / 2,
+    finalY + 8,
     { align: 'center' }
   );
-
-  return doc;
 }
 
 export function shareBillViaWhatsApp(entry: BoxEntry, customer: Customer): void {

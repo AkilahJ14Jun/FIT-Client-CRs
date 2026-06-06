@@ -14,6 +14,12 @@ export class AppSettings {
   @Column({ default: "" })
   companyPhone!: string;
 
+  @Column({ default: "" })
+  companyPhone2!: string;
+
+  @Column({ default: "" })
+  companyPhone3!: string;
+
   @Column({ nullable: true })
   companyEmail?: string;
 

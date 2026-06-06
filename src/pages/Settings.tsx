@@ -27,6 +27,7 @@ interface AppUser {
 
 const DEFAULT_SETTINGS: AppSettings = {
   companyName: 'FIT – Fish Inventory Tracking', companyAddress: '', companyPhone: '',
+  companyPhone2: '', companyPhone3: '',
   companyEmail: '', traderName: '', gstNumber: '', billPrefix: 'BILL', currency: 'INR',
   dateFormat: 'dd MMM yyyy', autoBackup: true, theme: 'light',
   stockAlertEnabled: true, stockAlertThreshold: 30, language: 'en',
@@ -341,7 +342,9 @@ export const Settings: React.FC = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Input label={t('settings.companyName')} value={settings.companyName} onChange={(e) => setSettings((s) => ({ ...s, companyName: e.target.value }))} placeholder={t('settings.companyName')} />
             <Input label={t('settings.traderName')} value={settings.traderName || ''} onChange={(e) => setSettings((s) => ({ ...s, traderName: e.target.value }))} placeholder={t('settings.traderName')} />
-            <Input label={t('settings.phone')} value={settings.companyPhone} onChange={(e) => setSettings((s) => ({ ...s, companyPhone: e.target.value }))} placeholder={t('settings.phone')} type="tel" />
+            <Input label={t('settings.phone1')} value={settings.companyPhone} onChange={(e) => setSettings((s) => ({ ...s, companyPhone: e.target.value }))} placeholder={t('settings.phone1')} type="tel" />
+            <Input label={t('settings.phone2')} value={settings.companyPhone2} onChange={(e) => setSettings((s) => ({ ...s, companyPhone2: e.target.value }))} placeholder={t('settings.phone2')} type="tel" />
+            <Input label={t('settings.phone3')} value={settings.companyPhone3} onChange={(e) => setSettings((s) => ({ ...s, companyPhone3: e.target.value }))} placeholder={t('settings.phone3')} type="tel" />
             <Input label={t('settings.email')} value={settings.companyEmail || ''} onChange={(e) => setSettings((s) => ({ ...s, companyEmail: e.target.value }))} placeholder="business@email.com" type="email" />
             <Input label={t('settings.gst')} value={settings.gstNumber || ''} onChange={(e) => setSettings((s) => ({ ...s, gstNumber: e.target.value }))} placeholder={t('settings.gst')} />
             <Input label={t('settings.billPrefix')} value={settings.billPrefix} onChange={(e) => setSettings((s) => ({ ...s, billPrefix: e.target.value }))} placeholder="BILL" />

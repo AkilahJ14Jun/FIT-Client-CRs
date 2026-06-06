@@ -147,7 +147,7 @@ export const Entries: React.FC = () => {
       totals[e.id] = {
         totalSent: newSent,
         totalReturned: newRet,
-        balance: newSent - newRet
+        balance: Math.max(0, newSent - newRet)
       };
     });
 
