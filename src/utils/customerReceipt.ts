@@ -29,10 +29,15 @@
  */
 
 import type { BoxEntry, Customer } from '../db/database';
-import { SettingsDB, CustomerDB } from '../db/database';
+import { SettingsDB, CustomerDB, SourceDB } from '../db/database';
 import { format } from 'date-fns';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import * as pdfjsLib from 'pdfjs-dist';
+// @ts-ignore
+import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -73,6 +78,32 @@ export function isMobileDevice(): boolean {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+async function getPendingVarieties(entry: BoxEntry, history: any): Promise<string[]> {
+  const allSources = await SourceDB.getActive();
+  const sourceNameMap = Object.fromEntries(allSources.map((s) => [s.id, s.sourceName]));
+
+  const finalVarietyTotals = { ...history.varietyTotals };
+  if (entry.entryType === 'dispatch' || entry.entryType === 'opening_balance') {
+    if (entry.openingStockSources) {
+      for (const src of entry.openingStockSources) {
+         finalVarietyTotals[src.sourceId] = (finalVarietyTotals[src.sourceId] || 0) + src.quantity;
+      }
+    } else if (entry.isExternalSource && entry.sourceId) {
+       finalVarietyTotals[entry.sourceId] = (finalVarietyTotals[entry.sourceId] || 0) + (entry.externalBoxCount || 0);
+    }
+  } else if (entry.entryType === 'return') {
+    if (entry.openingStockSources) {
+      for (const src of entry.openingStockSources) {
+         finalVarietyTotals[src.sourceId] = (finalVarietyTotals[src.sourceId] || 0) - src.quantity;
+      }
+    }
+  }
+
+  return Object.entries(finalVarietyTotals)
+    .filter(([_, qty]) => (qty as number) > 0)
+    .map(([sId, qty]) => `${sourceNameMap[sId] || sId}: ${qty}`);
+}
+
 /** HTML-escape helper (used in receipt rendering) */
 export function esc(s: string | null | undefined): string {
   if (!s) return '';
@@ -93,10 +124,33 @@ export function entryTypeLabel(type: string): string {
   return map[type] ?? type.replace(/_/g, ' ').toUpperCase();
 }
 
-/** Suggested PDF filename for a given entry */
-export function receiptFilename(entry: BoxEntry): string {
+/** Suggested JPG filename for a given entry */
+export function receiptFilename(entry: BoxEntry, customer?: Customer): string {
   const safe = (entry.billNumber || entry.id).replace(/[^a-zA-Z0-9_-]/g, '_');
-  return `Receipt_${safe}_${entry.entryDate.replace(/-/g, '')}.pdf`;
+  return `Receipt_${safe}_${entry.entryDate.replace(/-/g, '')}.jpg`;
+}
+
+async function pdfBlobToImageBlob(pdfBlob: Blob): Promise<Blob> {
+  const arrayBuffer = await pdfBlob.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const page = await pdf.getPage(1);
+  const viewport = page.getViewport({ scale: 2.0 });
+
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('Canvas 2D context not available');
+  canvas.height = viewport.height;
+  canvas.width = viewport.width;
+
+  // @ts-ignore
+  await page.render({ canvasContext: context, viewport }).promise;
+
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error('Canvas to Blob failed'));
+    }, 'image/jpeg');
+  });
 }
 
 // ─── JSPDF RECEIPT — AS BROS FORMAT ──────────────────────────────────────────
@@ -108,27 +162,18 @@ export async function downloadReceiptAsPDF(
 ): Promise<string | void> {
   const settings = await SettingsDB.get();
   
-  // A4 size: 210mm x 297mm
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  // Half A4 size (A5 Landscape): 210mm x 148.5mm
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [210, 148.5] });
 
-  // Render the receipt twice on the same A4 page
-  // First receipt at the top
+  // Render the receipt once on the page
   await renderReceiptContent(doc, 10, entry, customer, settings);
-
-  // Separation line/gap
-  doc.setDrawColor(200, 200, 200);
-  doc.setLineDashPattern([2, 2], 0);
-  doc.line(0, 148.5, 210, 148.5); // Middle of A4
-  doc.setLineDashPattern([], 0);
-
-  // Second receipt at the bottom
-  await renderReceiptContent(doc, 158.5, entry, customer, settings);
 
   // ─── Output Actions ────────────────────────────────────────────────────────
   try {
+    const pdfBlob = doc.output('blob');
+    
     if (action === 'print') {
-      const blob = doc.output('blob');
-      const url = URL.createObjectURL(blob);
+      const url = URL.createObjectURL(pdfBlob);
       const iframe = document.createElement('iframe');
       iframe.style.display = 'none';
       iframe.src = url;
@@ -148,21 +193,53 @@ export async function downloadReceiptAsPDF(
       return;
     }
 
+    const imageBlob = await pdfBlobToImageBlob(pdfBlob);
+
     if (action === 'base64') {
-      return doc.output('datauristring');
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(imageBlob);
+      });
     }
 
-    const blob = doc.output('blob');
-    const url = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(imageBlob);
 
     if (action === 'open') {
-      window.open(url, '_blank');
+      const filename = receiptFilename(entry, customer);
+      const html = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>${filename}</title>
+            <style>
+              body { margin: 0; background: #525659; display: flex; justify-content: center; align-items: flex-start; padding: 20px; font-family: sans-serif; }
+              img { max-width: 100%; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
+              .toolbar { position: fixed; top: 0; left: 0; right: 0; background: #323639; padding: 10px 20px; display: flex; justify-content: flex-end; z-index: 10; }
+              .download-btn { background: #007bff; color: white; padding: 8px 16px; border-radius: 4px; text-decoration: none; font-weight: bold; }
+              .content { margin-top: 50px; }
+            </style>
+          </head>
+          <body>
+            <div class="toolbar">
+              <a class="download-btn" href="${url}" download="${filename}">Download Image</a>
+            </div>
+            <div class="content">
+              <img src="${url}" alt="Receipt" />
+            </div>
+          </body>
+        </html>
+      `;
+      const htmlBlob = new Blob([html], { type: 'text/html' });
+      const htmlUrl = URL.createObjectURL(htmlBlob);
+      window.open(htmlUrl, '_blank');
       return;
     }
 
     const a = document.createElement('a');
     a.href = url;
-    a.download = receiptFilename(entry);
+    a.download = receiptFilename(entry, customer);
     document.body.appendChild(a);
     a.click();
     setTimeout(() => {
@@ -188,6 +265,7 @@ async function renderReceiptContent(doc: jsPDF, startY: number, entry: BoxEntry,
   const todayFishBox = entry.currentQuantity; 
   const totalBox = previousBalanceBox + todayFishBox;
   const totalBalanceBox = Math.max(0, totalBox - entry.boxesReturned);
+  const pendingVarieties = await getPendingVarieties(entry, history);
 
   // ── External sources for footer notes ─────────────────────────────────────
   const externalSources: Array<{ name: string; qty: number }> = [];
@@ -309,11 +387,23 @@ async function renderReceiptContent(doc: jsPDF, startY: number, entry: BoxEntry,
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   const noteText = `NOTE : AS & Bros Box-${ownQty}`;
-  if (entry.entryType === 'dispatch' && externalSources.length > 0) {
-    const varietyBracket = `(${externalSources.map((s) => `${s.name}: ${s.qty}`).join(', ')})`;
+  if (entry.entryType === 'dispatch') {
     doc.text(noteText, ML, y);
-    doc.text(varietyBracket, ML, y + 4);
-    y += 9.5;
+    if (externalSources.length > 0) {
+      const varietyBracket = `(${externalSources.map((s) => `${s.name}: ${s.qty}`).join(', ')})`;
+      doc.text(varietyBracket, ML, y + 4);
+      y += 9.5;
+    } else {
+      y += 6;
+    }
+  } else if (entry.entryType === 'return') {
+    doc.text(noteText, ML, y);
+    let currentY = y + 4;
+    if (pendingVarieties.length > 0) {
+      doc.text(`Pending: (${pendingVarieties.join(', ')})`, ML, currentY);
+      currentY += 4;
+    }
+    y = currentY + 2;
   } else {
     doc.text(noteText, ML, y);
     y += 6;
@@ -359,6 +449,7 @@ export async function buildWhatsAppPayload(
   const todayFishBox = entry.currentQuantity;
   const totalBox = previousBalanceBox + todayFishBox;
   const totalBalanceBox = Math.max(0, totalBox - entry.boxesReturned);
+  const pendingVarieties = await getPendingVarieties(entry, history);
 
   const ownQty = entry.companyOwnQuantity ?? entry.currentQuantity;
 
@@ -375,6 +466,10 @@ export async function buildWhatsAppPayload(
   ];
   if (entry.entryType === 'dispatch' && externalSources.length > 0) {
     noteLines.push(`(${externalSources.map((s) => `${s.name}: ${s.qty}`).join(', ')})`);
+  } else if (entry.entryType === 'return') {
+    if (pendingVarieties.length > 0) {
+      noteLines.push(`Pending: (${pendingVarieties.join(', ')})`);
+    }
   }
 
   const lines = [
@@ -430,7 +525,7 @@ export async function buildWhatsAppPayload(
   //
   // URL Format: fitshare://send?phone=<encoded_phone>&file=<encoded_filename>
   // ──────────────────────────────────────────────────────────────────────────
-  const pdfFilename = receiptFilename(entry);
+  const pdfFilename = receiptFilename(entry, customer);
   const fitshareUrl = `fitshare://send?phone=${encodeURIComponent(phonePlus)}&file=${encodeURIComponent(pdfFilename)}`;
 
   return {

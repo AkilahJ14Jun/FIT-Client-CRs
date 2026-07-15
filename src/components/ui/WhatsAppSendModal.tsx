@@ -1,8 +1,8 @@
 // FIT – WhatsApp Send Modal
 // 3-step guided flow mirroring PyWhatKit's approach:
-//   Step 1 → Download the receipt as a PDF directly to the Downloads folder
+//   Step 1 → Download the receipt as an image directly to the Downloads folder
 //   Step 2 → Open WhatsApp Web with the customer's number & message pre-filled
-//   Step 3 → Attach the downloaded PDF using WhatsApp Web's paperclip icon and Send
+//   Step 3 → Attach the downloaded image using WhatsApp Web's paperclip icon and Send
 
 import React, { useEffect, useState } from 'react';
 import {
@@ -92,7 +92,7 @@ export const WhatsAppSendModal: React.FC<Props> = ({
               Send Receipt via WhatsApp
             </p>
             <p className="text-green-100 text-xs mt-0.5">
-              Follow all 3 steps to share the PDF with the customer
+              Follow all 3 steps to share the image with the customer
             </p>
           </div>
           <button
@@ -117,7 +117,7 @@ export const WhatsAppSendModal: React.FC<Props> = ({
           <div className="text-center space-y-2">
             <h3 className="text-lg font-bold text-gray-800">Ready for Automated Sharing</h3>
             <p className="text-sm text-gray-600">
-              This will launch a PowerShell script to automatically attach the PDF and send it via WhatsApp Web.
+              This will launch a PowerShell script to automatically attach the image and send it via WhatsApp Web.
             </p>
           </div>
 
@@ -167,7 +167,7 @@ export const WhatsAppSendModal: React.FC<Props> = ({
               </div>
             </div>
             <div className="flex justify-between items-center text-sm border-t border-gray-200 pt-3">
-              <span className="text-gray-500 flex items-center gap-1.5"><FileText size={14} /> PDF File</span>
+              <span className="text-gray-500 flex items-center gap-1.5"><FileText size={14} /> Image File</span>
               <span className="text-xs font-mono text-blue-700 bg-white px-2 py-1 rounded border border-gray-200 truncate max-w-[200px]">
                 {filename}
               </span>

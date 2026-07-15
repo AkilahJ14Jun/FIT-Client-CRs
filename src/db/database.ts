@@ -249,7 +249,11 @@ export const CustomerDB = {
     // Sort by date ascending to compute cumulative balance correctly
     const filtered = customerEntries
       .filter(e => e.billNumber !== excludeBillNumber)
-      .sort((a, b) => a.entryDate.localeCompare(b.entryDate));
+      .sort((a, b) => {
+        const dateCmp = a.entryDate.localeCompare(b.entryDate);
+        if (dateCmp !== 0) return dateCmp;
+        return (a.createdAt || '').localeCompare(b.createdAt || '');
+      });
 
     let cumulativeBalance = 0;
     const varietyTotals: Record<string, number> = {};
@@ -446,17 +450,40 @@ export const EntryDB = {
     // Find the most recent stock position entry
     const obEntries = all
       .filter((e) => e.entryType === 'opening_balance')
-      .sort((a, b) => b.entryDate.localeCompare(a.entryDate));
+      .sort((a, b) => {
+        const dateCmp = b.entryDate.localeCompare(a.entryDate);
+        if (dateCmp !== 0) return dateCmp;
+        return (b.createdAt || '').localeCompare(a.createdAt || '');
+      });
     const ob = obEntries[0] ?? null;
     const obSources = ob?.openingStockSources ?? [];
 
+    const relevantEntries = all.filter(e => {
+      if (e.entryType === 'opening_balance') return false;
+      if (!ob) return true;
+      if (e.entryDate > ob.entryDate) return true;
+      if (e.entryDate === ob.entryDate) {
+        if (e.createdAt && ob.createdAt) {
+          return e.createdAt >= ob.createdAt;
+        }
+        return true;
+      }
+      return false;
+    });
+
     // Sum own-inventory dispatches and returns (non-external)
-    const ownDispatched = all
+    const ownDispatched = relevantEntries
       .filter((e) => e.entryType === 'dispatch' && !e.isExternalSource)
       .reduce((s, e) => s + (e.currentQuantity || 0), 0);
-    const ownReturned = all
+    const ownReturned = relevantEntries
       .filter((e) => e.entryType === 'return')
-      .reduce((s, e) => s + (e.boxesReturned || 0), 0);
+      .reduce((s, e) => {
+         const varietyReturnQty = e.openingStockSources?.reduce((sum, ss) => sum + ss.quantity, 0) || 0;
+         const legacyQty = (e.isExternalSource && e.sourceId) ? (e.externalBoxCount || 0) : 0;
+         const totalVarietyReturn = Math.max(varietyReturnQty, legacyQty);
+         const companyReturnQty = Math.max(0, (e.boxesReturned || 0) - totalVarietyReturn);
+         return s + companyReturnQty;
+      }, 0);
 
     const liveCompanyQty = Math.max(0, (ob?.companyOwnQuantity ?? 0) - ownDispatched + ownReturned);
 
@@ -468,9 +495,7 @@ export const EntryDB = {
     const seenSourceIds = new Set<string>();
     for (const src of obSources) {
       // Find all dispatches and returns that affected this specific variety
-      const srcNetDispatched = all.reduce((net, e) => {
-        if (e.entryType === 'opening_balance') return net; // Skip other OBs
-        
+      const srcNetDispatched = relevantEntries.reduce((net, e) => {
         // Check for specific variety in openingStockSources (multi-row mode)
         const rowQty = e.openingStockSources?.find(ss => ss.sourceId === src.sourceId)?.quantity || 0;
         
@@ -495,8 +520,7 @@ export const EntryDB = {
     // Append any active sources NOT in the stock position
     for (const src of allSources) {
       if (!src.isActive || seenSourceIds.has(src.id)) continue;
-      const srcNetDispatched = all.reduce((net, e) => {
-        if (e.entryType === 'opening_balance') return net;
+      const srcNetDispatched = relevantEntries.reduce((net, e) => {
         const rowQty = e.openingStockSources?.find(ss => ss.sourceId === src.id)?.quantity || 0;
         const legacyQty = (e.isExternalSource && e.sourceId === src.id) ? (e.externalBoxCount || 0) : 0;
         const change = Math.max(rowQty, legacyQty);
@@ -517,67 +541,9 @@ export const EntryDB = {
     return { entry: ob, liveCompanyQty, liveSources, liveTotal };
   },
 
-  /** CR6: After a dispatch or return is saved, find the latest stock position
-   *  entry and update its companyOwnQuantity and openingStockSources quantities.
-   *  - Dispatch (own):     companyOwnQuantity -= currentQuantity
-   *  - Dispatch (external): source[sourceId].quantity -= externalBoxCount
-   *  - Return:             companyOwnQuantity += boxesReturned
-   */
   async updateStockPositionAfterEntry(savedEntry: BoxEntry): Promise<void> {
-    const all = await this.getAll();
-    const obEntries = all
-      .filter((e) => e.entryType === 'opening_balance' && /^\d+$/.test(e.billNumber))
-      .sort((a, b) => b.entryDate.localeCompare(a.entryDate));
-    const ob = obEntries[0];
-    if (!ob) return; // No stock position to update
-
-    let newCompanyQty = ob.companyOwnQuantity ?? 0;
-    let newSources    = (ob.openingStockSources ?? []).map((s) => ({ ...s }));
-
-    if (savedEntry.entryType === 'dispatch') {
-      // 1. Deduct all variety quantities from their respective entries in newSources
-      if (savedEntry.openingStockSources && savedEntry.openingStockSources.length > 0) {
-        for (const dispatchSrc of savedEntry.openingStockSources) {
-          newSources = newSources.map((s) =>
-            s.sourceId === dispatchSrc.sourceId
-              ? { ...s, quantity: Math.max(0, s.quantity - dispatchSrc.quantity) }
-              : s
-          );
-        }
-      } else if (savedEntry.isExternalSource && savedEntry.sourceId) {
-        // Fallback for legacy single-variety dispatches
-        newSources = newSources.map((s) =>
-          s.sourceId === savedEntry.sourceId
-            ? { ...s, quantity: Math.max(0, s.quantity - (savedEntry.externalBoxCount ?? 0)) }
-            : s
-        );
-      } else {
-        // Deduct from company own inventory
-        newCompanyQty = Math.max(0, newCompanyQty - (savedEntry.currentQuantity ?? 0));
-      }
-    } else if (savedEntry.entryType === 'return') {
-      // Support for variety-specific returns if present in openingStockSources
-      if (savedEntry.openingStockSources && savedEntry.openingStockSources.length > 0) {
-        for (const returnSrc of savedEntry.openingStockSources) {
-          newSources = newSources.map((s) =>
-            s.sourceId === returnSrc.sourceId
-              ? { ...s, quantity: s.quantity + returnSrc.quantity }
-              : s
-          );
-        }
-      } else {
-        // Default: returns replenish company own inventory
-        newCompanyQty = newCompanyQty + (savedEntry.boxesReturned ?? 0);
-      }
-    }
-
-    const newTotal = newCompanyQty + newSources.reduce((s, r) => s + r.quantity, 0);
-    await this.update(ob.id, {
-      companyOwnQuantity:  newCompanyQty,
-      openingStockSources: newSources,
-      currentQuantity:     newTotal,
-      balanceBoxes:        newTotal,
-    });
+    // No-op: Stock position is now calculated dynamically from the latest opening balance.
+    // This prevents double-deduction and ensures historical integrity.
   },
 
   async nextBillNumber(entryType?: string): Promise<string> {
@@ -637,13 +603,34 @@ export const StockAlertDB = {
     ]);
     
     // Global Stock
-    const openingStock = entries
+    const obEntries = entries
       .filter((e) => e.entryType === 'opening_balance')
-      .reduce((s, e) => s + (e.currentQuantity || 0), 0);
-    const totalDispatched = entries
+      .sort((a, b) => {
+        const dateCmp = b.entryDate.localeCompare(a.entryDate);
+        if (dateCmp !== 0) return dateCmp;
+        return (b.createdAt || '').localeCompare(a.createdAt || '');
+      });
+    const ob = obEntries[0] ?? null;
+
+    const openingStock = ob ? (ob.currentQuantity || 0) : 0;
+
+    const relevantEntries = entries.filter(e => {
+      if (e.entryType === 'opening_balance') return false;
+      if (!ob) return true;
+      if (e.entryDate > ob.entryDate) return true;
+      if (e.entryDate === ob.entryDate) {
+        if (e.createdAt && ob.createdAt) {
+          return e.createdAt >= ob.createdAt;
+        }
+        return true;
+      }
+      return false;
+    });
+
+    const totalDispatched = relevantEntries
       .filter((e) => e.entryType === 'dispatch')
       .reduce((s, e) => s + e.currentQuantity, 0);
-    const totalReturned = entries
+    const totalReturned = relevantEntries
       .filter((e) => e.entryType === 'return')
       .reduce((s, e) => s + e.boxesReturned, 0);
     const currentStock = Math.max(0, openingStock - totalDispatched + totalReturned);
@@ -658,16 +645,17 @@ export const StockAlertDB = {
     for (const source of activeSources) {
       if (!source.stockThreshold || source.stockThreshold <= 0) continue;
       
-      const sOpening = entries
-        .filter(e => e.entryType === 'opening_balance' && e.openingStockSources?.some(ss => ss.sourceId === source.id))
-        .reduce((sum, e) => {
-          const matched = e.openingStockSources?.find(ss => ss.sourceId === source.id);
-          return sum + (matched?.quantity || 0);
-        }, 0);
+      const sOpening = ob?.openingStockSources?.find(ss => ss.sourceId === source.id)?.quantity || 0;
         
-      const sDispatched = entries
-        .filter(e => e.entryType === 'dispatch' && e.sourceId === source.id)
-        .reduce((sum, e) => sum + (e.externalBoxCount || 0), 0);
+      const sDispatched = relevantEntries.reduce((sum, e) => {
+          const rowQty = e.openingStockSources?.find(ss => ss.sourceId === source.id)?.quantity || 0;
+          const legacyQty = (e.isExternalSource && e.sourceId === source.id) ? (e.externalBoxCount || 0) : 0;
+          const change = Math.max(rowQty, legacyQty);
+          
+          if (e.entryType === 'dispatch') return sum + change;
+          if (e.entryType === 'return') return sum - change;
+          return sum;
+        }, 0);
         
       const sCurrent = sOpening - sDispatched;
       if (sCurrent < source.stockThreshold) {

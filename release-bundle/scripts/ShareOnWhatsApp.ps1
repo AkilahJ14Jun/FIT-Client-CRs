@@ -136,6 +136,7 @@ using System.Collections.Generic;
 using System.Text;
 public class Win32 {
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
     [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
     public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
@@ -162,7 +163,7 @@ if (-not ([System.Management.Automation.PSTypeName]'Win32').Type) {
 
 function Activate-WhatsApp {
     Log-Msg "Searching for WhatsApp window..."
-    $triedTabSearch = $false
+    $global:IsNewInstance = $false
     
     for ($i = 0; $i -lt 25; $i++) {
         # Search for windows containing "WhatsApp" anywhere in the title
@@ -185,43 +186,12 @@ function Activate-WhatsApp {
             return $hWnd
         }
         
-        # If WhatsApp window is not found, try the Tab-Search trick once on Chrome/Edge before launching a new process
-        if (-not $triedTabSearch -and $i -eq 0) {
-            $triedTabSearch = $true
-            Log-Msg "Active WhatsApp window not found. Attempting to activate background tab via Chrome/Edge Tab Search..."
-            
-            # Find any open Chrome or Edge windows
-            $browserWindows = [Win32]::FindWindows("Chrome") + [Win32]::FindWindows("Edge")
-            if ($browserWindows.Count -gt 0) {
-                $browserHWnd = $browserWindows[0]
-                Log-Msg "Found browser window, activating to search tabs..."
-                [Win32]::ShowWindow($browserHWnd, 9) # Restore
-                Start-Sleep -Milliseconds 200
-                [Win32]::SetForegroundWindow($browserHWnd)
-                Start-Sleep -Milliseconds 500
-                
-                # Send Tab Search shortcut (Ctrl+Shift+A)
-                Log-Msg "Sending Ctrl+Shift+A..."
-                Send-Key "^+a" 
-                Start-Sleep -Milliseconds 600
-                
-                # Type "WhatsApp" and Enter
-                Log-Msg "Typing WhatsApp in tab search..."
-                Send-Key "WhatsApp"
-                Start-Sleep -Milliseconds 600
-                Send-Key "{ENTER}"
-                Start-Sleep -Milliseconds 1500 # Wait for tab switch to complete
-                
-                # Continue loop to let next iteration detect the activated tab!
-                continue
-            }
-        }
-        
-        # Only launch browser on the very first try if absolutely nothing found (including Search-Tabs trick failed)
-        if ($i -eq 1 -or ($i -eq 0 -and $browserWindows.Count -eq 0)) { 
-            Log-Msg "Initial search and tab search failed. Launching browser/app..."
+        # If WhatsApp window is not found, launch browser/app
+        if ($i -eq 0) { 
+            Log-Msg "WhatsApp window not found on first check. Launching browser/app..."
+            $global:IsNewInstance = $true
             Start-Process $WhatsAppUrl 
-            Start-Sleep -Seconds 3 # Give it a moment to actually open the process
+            Start-Sleep -Seconds 5 # Give it a moment to actually open the process and load
         }
         Start-Sleep -Seconds 1
         Log-Msg "Waiting for WhatsApp window to appear... ($($i+1)/25)"
@@ -266,40 +236,58 @@ Log-Msg "Starting chat search & paste sequence..."
 [Win32]::SetForegroundWindow($targetHWnd)
 Start-Sleep -Milliseconds 1000
 
+if ($global:IsNewInstance) {
+    Log-Msg "Fresh launch detected. Prompting user to wait for WhatsApp..."
+    [Win32]::SetForegroundWindow($targetHWnd)
+    
+    $form = New-Object System.Windows.Forms.Form
+    $form.TopMost = $true
+    $form.ShowInTaskbar = $false
+    $form.WindowState = "Minimized"
+    $form.Show()
+    
+    [System.Windows.Forms.MessageBox]::Show($form, "WhatsApp is doing a fresh launch.`n`nPlease wait for it to finish 'Downloading all chats' and load completely.`n`nClick OK once WhatsApp is fully ready to share the receipt.", "FIT Receipt Sharing", 0, 64) | Out-Null
+    
+    $form.Dispose()
+    
+    # Re-focus WhatsApp
+    [Win32]::SetForegroundWindow($targetHWnd)
+    Start-Sleep -Milliseconds 1500
+} else {
+    Log-Msg "WhatsApp already open. Waiting 3 seconds for sync..."
+    Start-Sleep -Seconds 3
+}
+
 # Step A: Focus & Clear the Search Bar
 Send-Key "{ESC}" 
 Start-Sleep -Milliseconds 500
 Send-Key "^%/" # Ctrl+Alt+/ (WhatsApp Web Search)
-Start-Sleep -Milliseconds 800
+Start-Sleep -Milliseconds 1500
 Send-Key "^a{BACKSPACE}" # Clear any existing search text
-Start-Sleep -Milliseconds 300
+Start-Sleep -Milliseconds 500
 
 # Step B: Type phone number and Enter to switch chat
 $cleanPhone = $Phone.TrimStart('+')
 $escapedPhone = $cleanPhone -replace '([\+\^%\~(){}\[\]])', '{$1}'
 Log-Msg "Typing phone: $cleanPhone"
 Send-Key "$escapedPhone"
-Start-Sleep -Milliseconds 2000 # Wait for search results to filter
+Start-Sleep -Milliseconds 3000 # Wait for search results to filter
 Send-Key "{ENTER}"
 Log-Msg "Chat switch triggered."
-Start-Sleep -Milliseconds 1000
-
-# Send Escape to clear the search bar focus and highlight the message text box
-Send-Key "{ESC}"
-Start-Sleep -Milliseconds 2500 # Wait for chat window to fully render and focus input box
+Start-Sleep -Milliseconds 2000 # Wait for chat window to fully render and focus input box
 
 # Final re-focus check before pasting
 [Win32]::SetForegroundWindow($targetHWnd)
-Start-Sleep -Milliseconds 300
+Start-Sleep -Milliseconds 500
 
-# Step C: Paste the file (Ctrl+V)
-Log-Msg "Pasting file..."
+# Step C: Paste Image Directly (Ctrl+V)
+Log-Msg "Pasting file as image via Ctrl+V..."
 Send-Key "^v"
-Start-Sleep -Milliseconds 4000 # Give it plenty of time to render the PDF preview (4 seconds)
+Start-Sleep -Milliseconds 4000
 
 # Step D: Send (Enter)
-Log-Msg "Sending..."
+Log-Msg "Sending Image..."
 Send-Key "{ENTER}"
-Log-Msg "DONE (Multi-Stage)."
+Log-Msg "DONE (Image Attach)."
 
 Start-Sleep -Seconds 2

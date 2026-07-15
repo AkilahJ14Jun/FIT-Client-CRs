@@ -10,7 +10,12 @@ docker compose up -d
 echo.
 echo Starting FIT Backend API...
 cd server
-start /b cmd /c "npm run serve"
+if not exist "node_modules\express\" (
+    echo Backend dependencies missing or incomplete. Installing...
+    if exist "node_modules\" rmdir /s /q "node_modules"
+    npm install --omit=dev
+)
+start /b node dist/index.js
 
 echo.
 echo Waiting for application to initialize...

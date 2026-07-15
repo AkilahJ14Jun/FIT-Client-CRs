@@ -256,7 +256,7 @@ export const Entries: React.FC = () => {
       <div className="flex flex-wrap items-center gap-4 px-1 text-xs text-gray-500">
         <span className="font-semibold text-gray-600 uppercase tracking-wide">{t('entries.actionIcons')}</span>
         <span className="flex items-center gap-1.5"><span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-blue-50 text-blue-700"><Receipt size={13} /></span>{t('entries.previewReceipt')}</span>
-        <span className="flex items-center gap-1.5"><span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-teal-50 text-teal-700"><FileDown size={14} /></span>Download PDF</span>
+        <span className="flex items-center gap-1.5"><span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-teal-50 text-teal-700"><FileDown size={14} /></span>{t('entries.downloadReceipt', 'Download Customer Receipt')}</span>
         <span className="flex items-center gap-1.5"><span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-green-50 text-green-600"><MessageCircle size={13} /></span>{t('entries.shareWhatsApp')}</span>
       </div>
 

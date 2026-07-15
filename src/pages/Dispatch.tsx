@@ -431,10 +431,7 @@ export const Dispatch: React.FC = () => {
         ? await EntryDB.update(editId, payload) as BoxEntry
         : await EntryDB.create(payload);
 
-      // CR6: Update stock position entry to reflect this dispatch/return
-      if (savedEntry) {
-        await EntryDB.updateStockPositionAfterEntry(savedEntry);
-      }
+      // Stock position is dynamically calculated from the DB, so no manual update is needed.
 
       // Persist the updated sent count to the backend
       if (customer && savedEntry && !editId) {

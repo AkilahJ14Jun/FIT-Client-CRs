@@ -59,8 +59,7 @@ Write-Host "Copying Server Files..." -ForegroundColor Yellow
 $serverItems = @(
     "server\dist",
     "server\package.json",
-    "server\package-lock.json",
-    "server\.env"
+    "server\package-lock.json"
 )
 
 foreach ($item in $serverItems) {
