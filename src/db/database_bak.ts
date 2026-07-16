@@ -452,14 +452,16 @@ export interface DashboardStats {
   topCustomers: { name: string; shop: string; sent: number; balance: number }[];
   recentEntries: BoxEntry[];
   monthlyTotals: { month: string; sent: number; returned: number }[];
+  whatsappStats: { totalSent: number; todaySent: number; remainingMsgCount: number };
 }
 
 export async function getDashboardStats(): Promise<DashboardStats> {
-  const [entries, customers, sourcesAll, stockLevel] = await Promise.all([
+  const [entries, customers, sourcesAll, stockLevel, whatsappStats] = await Promise.all([
     EntryDB.getAll(),
     CustomerDB.getAll(),
     SourceDB.getAll(),
     StockAlertDB.getStockLevel(),
+    apiFetch<{ totalSent: number; todaySent: number; remainingMsgCount: number }>('/whatsapp/stats').catch(() => ({ totalSent: 0, todaySent: 0, remainingMsgCount: 0 })),
   ]);
   const today = new Date().toISOString().split('T')[0];
   const todayEntries = entries.filter((e) => e.entryDate === today);

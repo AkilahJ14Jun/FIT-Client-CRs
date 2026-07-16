@@ -25,7 +25,7 @@ import {
   FileText,
   Smartphone,
 } from 'lucide-react';
-import type { BoxEntry, Customer } from '../../db/database';
+import { SettingsDB, type BoxEntry, type Customer, type AppSettings } from '../../db/database';
 import {
   downloadReceiptAsPDF,
   isMobileDevice,
@@ -58,9 +58,16 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
 
   const isMobile = isMobileDevice();
 
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+
   // Reset state whenever a new entry arrives
   useEffect(() => {
-    if (open) { setPrinted(false); setShowWAModal(false); setSharing(false); }
+    if (open) { 
+      setPrinted(false); 
+      setShowWAModal(false); 
+      setSharing(false);
+      SettingsDB.get().then(setSettings);
+    }
   }, [open, entry?.id]);
 
   // Close on Escape
@@ -92,16 +99,50 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
    * DESKTOP:  Opens the existing 3-step WhatsAppSendModal (fitshare:// automation).
    */
   const handleWhatsApp = async () => {
-    if (isMobile) {
+    const shareMethod = settings?.whatsappShareMethod || 'Direct WhatsApp Share';
+    if (shareMethod === 'Direct WhatsApp Share') {
       setSharing(true);
       try {
-        await shareMobile(entry, customer);
+        const base64Image = await downloadReceiptAsPDF(entry, customer, 'base64') as string;
+        const msg = entry.billNumber;
+        const mobile = customer.mobile || customer.alternateMobile || '9999999999';
+        
+        const res = await fetch('/api/whatsapp/send-direct', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            host: window.location.hostname,
+            mobile,
+            msg,
+            base64Image,
+            fileName: `Receipt_${entry.billNumber}.jpg`
+          })
+        });
+        
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || `Error ${res.status}`);
+        }
+        
+        alert('Direct WhatsApp Share successful!');
+      } catch (err: any) {
+        console.error('Direct Share Error', err);
+        alert('Direct WhatsApp Share failed: ' + err.message);
       } finally {
-        // Keep the button disabled briefly while the redirect fires
-        setTimeout(() => setSharing(false), 2500);
+        setSharing(false);
       }
     } else {
-      setShowWAModal(true);
+      if (isMobile) {
+        setSharing(true);
+        try {
+          await shareMobile(entry, customer);
+        } finally {
+          // Keep the button disabled briefly while the redirect fires
+          setTimeout(() => setSharing(false), 2500);
+        }
+      } else {
+        setShowWAModal(true);
+      }
     }
   };
 

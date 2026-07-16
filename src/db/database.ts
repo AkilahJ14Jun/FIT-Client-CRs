@@ -97,6 +97,7 @@ export interface AppSettings {
   stockAlertThresholdCount: number;
   stockAlertDismissedUntil?: string;
   language: 'en' | 'ta' | 'hi';
+  whatsappShareMethod?: string;
 }
 
 export interface AuditLog {
@@ -128,6 +129,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   stockAlertThreshold: 30,
   stockAlertThresholdCount: 50,
   language: 'en',
+  whatsappShareMethod: 'Direct WhatsApp Share',
 };
 
 // ─── API helper ────────────────────────────────────────────────────────────────
@@ -152,7 +154,9 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 export const SettingsDB = {
   async get(): Promise<AppSettings> {
     try {
-      return await apiFetch<AppSettings>('/settings');
+      const data = await apiFetch<AppSettings>('/settings');
+      // Merge with defaults to ensure new fields like whatsappShareMethod are present even for existing DB rows
+      return { ...DEFAULT_SETTINGS, ...(data || {}) };
     } catch {
       return { ...DEFAULT_SETTINGS };
     }
@@ -713,14 +717,16 @@ export interface DashboardStats {
   topCustomers: { name: string; shop: string; sent: number; balance: number }[];
   recentEntries: BoxEntry[];
   monthlyTotals: { month: string; sent: number; returned: number }[];
+  whatsappStats: { totalSent: number; todaySent: number; remainingMsgCount: number };
 }
 
 export async function getDashboardStats(): Promise<DashboardStats> {
-  const [entries, customers, sourcesAll, stockLevel] = await Promise.all([
+  const [entries, customers, sourcesAll, stockLevel, whatsappStats] = await Promise.all([
     EntryDB.getAll(),
     CustomerDB.getAll(),
     SourceDB.getAll(),
     StockAlertDB.getStockLevel(),
+    apiFetch<{ totalSent: number; todaySent: number; remainingMsgCount: number }>('/whatsapp/stats').catch(() => ({ totalSent: 0, todaySent: 0, remainingMsgCount: 0 })),
   ]);
   const today = new Date().toISOString().split('T')[0];
   const txEntries = entries.filter((e) => e.entryType !== 'opening_balance');
@@ -794,6 +800,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     topCustomers,
     recentEntries: entries.slice(0, 10),
     monthlyTotals,
+    whatsappStats,
   };
 }
 

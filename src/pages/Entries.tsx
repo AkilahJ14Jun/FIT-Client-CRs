@@ -7,12 +7,12 @@ import {
   Plus, Search, Pencil, FileDown, MessageCircle,
   ChevronDown, ChevronUp, Filter, Package, Receipt, Printer
 } from 'lucide-react';
-import { EntryDB, CustomerDB, AreaDB, type BoxEntry, type Customer, type CustomerArea } from '../db/database';
+import { EntryDB, CustomerDB, AreaDB, SettingsDB, type BoxEntry, type Customer, type CustomerArea } from '../db/database';
 import { Button }                from '../components/ui/Button';
 import { Badge }                 from '../components/ui/Badge';
 import { ReceiptPreviewModal }   from '../components/ui/ReceiptPreviewModal';
 import { WhatsAppSendModal }     from '../components/ui/WhatsAppSendModal';
-import { downloadReceiptAsPDF } from '../utils/customerReceipt';
+import { downloadReceiptAsPDF, isMobileDevice, shareMobile } from '../utils/customerReceipt';
 import { downloadEntriesPDF, printEntries } from '../utils/entriesReport';
 import { format }                from 'date-fns';
 import { useTranslation } from '../i18n/TranslationProvider';
@@ -177,8 +177,46 @@ export const Entries: React.FC = () => {
     }
   };
 
-  const handleWhatsApp = (e: BoxEntry) => {
-    setWaEntry(e); setWaCustomer(resolveCustomer(e)); setWaOpen(true);
+  const handleWhatsApp = async (e: BoxEntry) => {
+    const customer = resolveCustomer(e);
+    try {
+      const settings = await SettingsDB.get();
+      const shareMethod = settings?.whatsappShareMethod || 'Direct WhatsApp Share';
+      
+      if (shareMethod === 'Direct WhatsApp Share') {
+        const base64Image = await downloadReceiptAsPDF(e, customer, 'base64') as string;
+        const msg = e.billNumber;
+        const mobile = customer.mobile || customer.alternateMobile || '9999999999';
+        
+        const res = await fetch('/api/whatsapp/send-direct', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            host: window.location.hostname,
+            mobile,
+            msg,
+            base64Image,
+            fileName: `Receipt_${e.billNumber}.jpg`
+          })
+        });
+        
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || `Error ${res.status}`);
+        }
+        
+        showToast('Direct WhatsApp Share successful!', 'success');
+      } else {
+        if (isMobileDevice()) {
+          await shareMobile(e, customer);
+        } else {
+          setWaEntry(e); setWaCustomer(customer); setWaOpen(true);
+        }
+      }
+    } catch (err: any) {
+      console.error('WhatsApp Share Error:', err);
+      showToast('WhatsApp Share failed: ' + err.message, 'error');
+    }
   };
 
   const handleDownloadList = async () => {

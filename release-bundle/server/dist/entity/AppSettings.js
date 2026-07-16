@@ -94,6 +94,10 @@ __decorate([
     (0, typeorm_1.Column)({ nullable: true }),
     __metadata("design:type", String)
 ], AppSettings.prototype, "stockAlertDismissedUntil", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ default: "Direct WhatsApp Share" }),
+    __metadata("design:type", String)
+], AppSettings.prototype, "whatsappShareMethod", void 0);
 exports.AppSettings = AppSettings = __decorate([
     (0, typeorm_1.Entity)()
 ], AppSettings);

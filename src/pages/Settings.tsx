@@ -333,6 +333,19 @@ export const Settings: React.FC = () => {
               <option value="ta">தமிழ்</option>
               <option value="hi">हिन्दी</option>
             </select>
+            
+            <div className="flex items-center gap-3 mt-4">
+              <div className="bg-green-100 rounded-lg p-2 text-green-700"><Globe size={18} /></div>
+              <div><h3 className="font-semibold text-gray-800">WhatsApp Share Method</h3><p className="text-xs text-gray-500">Choose how to share customer receipts via WhatsApp</p></div>
+            </div>
+            <select
+              value={settings.whatsappShareMethod || 'Direct WhatsApp Share'}
+              onChange={(e) => setSettings((s) => ({ ...s, whatsappShareMethod: e.target.value }))}
+              className="rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="Direct WhatsApp Share">Direct WhatsApp Share</option>
+              <option value="Launch Automated Share">Launch Automated Share</option>
+            </select>
           </div>
 
           <div className="flex items-center gap-3">

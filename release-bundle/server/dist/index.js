@@ -28,7 +28,8 @@ const typeorm_1 = require("typeorm");
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const app = (0, express_1.default)();
 app.use((0, cors_1.default)());
-app.use(express_1.default.json());
+app.use(express_1.default.json({ limit: '50mb' }));
+app.use(express_1.default.urlencoded({ limit: '50mb', extended: true }));
 // ─── Error Handling & Logging ────────────────────────────────
 // Helper to wrap async routes and catch errors
 const catchAsync = (fn) => (req, res, next) => {
@@ -115,6 +116,154 @@ app.delete("/api/customers/:id", (req, res) => __awaiter(void 0, void 0, void 0,
     yield repo.remove(customer);
     yield logAudit("DELETE", "Customer", req.params.id, `Deleted customer: ${customer.customerName}`);
     res.json({ success: true });
+}));
+// ─── Direct WhatsApp Share ───────────────────────────────────
+app.post("/api/whatsapp/send-direct", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b;
+    const { host, mobile, msg, base64Image, fileName } = req.body;
+    const apiKey = process.env.WHATSAPP_API_KEY;
+    const apiHost = process.env.WHATSAPP_API_HOST || host;
+    if (!apiKey) {
+        return res.status(500).json({ error: "WHATSAPP_API_KEY environment variable is not set" });
+    }
+    // Allow self-signed certs for local IPs
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+    try {
+        const buffer = Buffer.from(base64Image.replace(/^data:image\/\w+;base64,/, ""), "base64");
+        // 1. Upload Media
+        const uploadFormData = new FormData();
+        const fileBlob = new Blob([buffer]);
+        uploadFormData.append('file', fileBlob, fileName || 'receipt.jpg');
+        const uploadRes = yield fetch(`https://${apiHost}/wapp/api/upload/media`, {
+            method: 'POST',
+            headers: {
+                'X-API-KEY': apiKey
+            },
+            body: uploadFormData
+        });
+        if (!uploadRes.ok) {
+            const errText = yield uploadRes.text();
+            throw new Error(`Upload API failed (${uploadRes.status}): ${errText}`);
+        }
+        const uploadData = yield uploadRes.json();
+        const mediaid = uploadData.mediaid || uploadData.id || uploadData.mediaId || ((_a = uploadData.data) === null || _a === void 0 ? void 0 : _a.mediaid) || ((_b = uploadData.data) === null || _b === void 0 ? void 0 : _b.id);
+        if (!mediaid) {
+            throw new Error(`Could not find mediaid in response: ${JSON.stringify(uploadData)}`);
+        }
+        // 2. Send Message
+        const sendFormData = new FormData();
+        sendFormData.append('apikey', apiKey);
+        sendFormData.append('mobile', mobile);
+        sendFormData.append('msg', msg);
+        sendFormData.append('mediaid', mediaid);
+        const sendRes = yield fetch(`https://${apiHost}/wapp/v2/api/send`, {
+            method: 'POST',
+            body: sendFormData
+        });
+        if (!sendRes.ok) {
+            const errText = yield sendRes.text();
+            throw new Error(`Send API failed (${sendRes.status}): ${errText}`);
+        }
+        const sendData = yield sendRes.json();
+        // Update .env stats
+        try {
+            const envPath = path_1.default.join(__dirname, "../.env");
+            if (fs_1.default.existsSync(envPath)) {
+                let content = fs_1.default.readFileSync(envPath, "utf-8");
+                let lines = content.split(/\r?\n/);
+                const todayStr = new Date().toISOString().split("T")[0];
+                let foundRemaining = false;
+                let foundTotal = false;
+                let foundToday = false;
+                let foundLastDate = false;
+                let currentLastDate = "";
+                for (let i = 0; i < lines.length; i++) {
+                    if (lines[i].startsWith("Last Sent Date=")) {
+                        currentLastDate = lines[i].split("=")[1].trim();
+                        lines[i] = `Last Sent Date=${todayStr}`;
+                        foundLastDate = true;
+                    }
+                }
+                for (let i = 0; i < lines.length; i++) {
+                    if (lines[i].startsWith("Remaining Msg Count=")) {
+                        let count = parseInt(lines[i].split("=")[1], 10) || 0;
+                        lines[i] = `Remaining Msg Count=${Math.max(0, count - 1)}`;
+                        foundRemaining = true;
+                    }
+                    if (lines[i].startsWith("Total Msg Sent=")) {
+                        let count = parseInt(lines[i].split("=")[1], 10) || 0;
+                        lines[i] = `Total Msg Sent=${count + 1}`;
+                        foundTotal = true;
+                    }
+                    if (lines[i].startsWith("Msg Sent Today=")) {
+                        let count = parseInt(lines[i].split("=")[1], 10) || 0;
+                        if (currentLastDate !== todayStr && currentLastDate !== "") {
+                            count = 0; // Reset for new day
+                        }
+                        lines[i] = `Msg Sent Today=${count + 1}`;
+                        foundToday = true;
+                    }
+                }
+                if (!foundRemaining)
+                    lines.push(`Remaining Msg Count=4999`);
+                if (!foundTotal)
+                    lines.push(`Total Msg Sent=1`);
+                if (!foundToday)
+                    lines.push(`Msg Sent Today=1`);
+                if (!foundLastDate)
+                    lines.push(`Last Sent Date=${todayStr}`);
+                fs_1.default.writeFileSync(envPath, lines.join("\n"));
+            }
+        }
+        catch (e) {
+            console.error("Failed to update .env stats", e);
+        }
+        res.json(sendData);
+    }
+    catch (err) {
+        console.error("Direct WhatsApp Share error:", err);
+        let errorMessage = err.message;
+        if (errorMessage === "fetch failed") {
+            errorMessage = `Fetch failed to WhatsApp API at https://${apiHost}. Ensure the host is correct and the service is running. You can configure WHATSAPP_API_HOST in server/.env`;
+        }
+        res.status(500).json({ error: errorMessage });
+    }
+}));
+app.get("/api/whatsapp/stats", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const envPath = path_1.default.join(__dirname, "../.env");
+        let content = "";
+        if (fs_1.default.existsSync(envPath)) {
+            content = fs_1.default.readFileSync(envPath, "utf-8");
+        }
+        const lines = content.split(/\r?\n/);
+        let totalSent = 0;
+        let todaySent = 0;
+        let remainingMsgCount = 0;
+        let lastSentDate = "";
+        for (const line of lines) {
+            if (line.startsWith("Total Msg Sent=")) {
+                totalSent = parseInt(line.split("=")[1], 10) || 0;
+            }
+            if (line.startsWith("Msg Sent Today=")) {
+                todaySent = parseInt(line.split("=")[1], 10) || 0;
+            }
+            if (line.startsWith("Last Sent Date=")) {
+                lastSentDate = line.split("=")[1].trim();
+            }
+            if (line.startsWith("Remaining Msg Count=")) {
+                remainingMsgCount = parseInt(line.split("=")[1], 10) || 0;
+            }
+        }
+        const todayStr = new Date().toISOString().split("T")[0];
+        if (lastSentDate !== todayStr) {
+            todaySent = 0;
+        }
+        res.json({ totalSent, todaySent, remainingMsgCount });
+    }
+    catch (err) {
+        res.status(500).json({ error: "Failed to read stats" });
+    }
 }));
 // ─── Customer Sent Count Reset Routes ─────────────────────────
 app.post("/api/customers/:id/reset-sent-count", (req, res) => __awaiter(void 0, void 0, void 0, function* () {

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Package, Users, Database, TrendingUp, ArrowRight,
-  Truck, RotateCcw, BarChart3, Calendar
+  Truck, RotateCcw, BarChart3, Calendar, MessageCircle
 } from 'lucide-react';
 import { FishLogo } from '../components/ui/FishLogo';
 import { getDashboardStats, type DashboardStats } from '../db/database';
@@ -27,6 +27,7 @@ const EMPTY_STATS: DashboardStats = {
   yesterdaySent: 0, yesterdayReturned: 0, yesterdayBalance: 0,
   mtdSent: 0, mtdReturned: 0, mtdBalance: 0,
   topCustomers: [], recentEntries: [], monthlyTotals: [],
+  whatsappStats: { totalSent: 0, todaySent: 0, remainingMsgCount: 0 },
 };
 
 export const Dashboard: React.FC = () => {
@@ -140,6 +141,31 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ── WHATSAPP STATS ── */}
+      <div className="flex items-center gap-2 px-1">
+        <MessageCircle size={15} className="text-green-600" />
+        <span className="text-sm font-semibold text-green-700">
+          WhatsApp Share Status
+        </span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="rounded-2xl bg-green-50 text-green-900 p-4 shadow-sm border border-green-100 flex items-center justify-between">
+          <div>
+            <p className="text-xs opacity-80 mb-1">Total Successfully Sent</p>
+            <p className="text-3xl font-extrabold">{loading ? '…' : stats.whatsappStats.totalSent}</p>
+            <p className="text-sm font-bold text-amber-700 mt-1.5">Remaining Msg Count: {loading ? '…' : stats.whatsappStats.remainingMsgCount}</p>
+          </div>
+          <MessageCircle size={32} className="opacity-20 text-green-700" />
+        </div>
+        <div className="rounded-2xl bg-green-50 text-green-900 p-4 shadow-sm border border-green-100 flex items-center justify-between">
+          <div>
+            <p className="text-xs opacity-80 mb-1">Sent Today</p>
+            <p className="text-3xl font-extrabold">{loading ? '…' : stats.whatsappStats.todaySent}</p>
+          </div>
+          <Calendar size={32} className="opacity-20 text-green-700" />
+        </div>
+      </div>
 
       {/* ── QUICK LINKS ── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">

@@ -61,4 +61,7 @@ export class AppSettings {
 
   @Column({ nullable: true })
   stockAlertDismissedUntil?: string;
+
+  @Column({ default: "Direct WhatsApp Share" })
+  whatsappShareMethod!: string;
 }
