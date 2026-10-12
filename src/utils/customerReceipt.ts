@@ -124,10 +124,61 @@ export function entryTypeLabel(type: string): string {
   return map[type] ?? type.replace(/_/g, ' ').toUpperCase();
 }
 
-/** Suggested JPG filename for a given entry */
-export function receiptFilename(entry: BoxEntry, customer?: Customer): string {
-  const safe = (entry.billNumber || entry.id).replace(/[^a-zA-Z0-9_-]/g, '_');
-  return `Receipt_${safe}_${entry.entryDate.replace(/-/g, '')}.jpg`;
+let cachedBillPrefix = 'BILL';
+SettingsDB.get().then((s) => {
+  if (s && typeof s.billPrefix === 'string') cachedBillPrefix = s.billPrefix;
+}).catch(() => {});
+
+/** Formatted bill number for a given entry: e.g. 'AS-000002' with configured prefix */
+export function receiptBillNumber(
+  entry: BoxEntry,
+  customerOrPrefix?: Customer | string,
+  prefixArg?: string
+): string {
+  let prefix = '';
+  if (typeof customerOrPrefix === 'string') {
+    prefix = customerOrPrefix;
+  } else if (typeof prefixArg === 'string') {
+    prefix = prefixArg;
+  } else {
+    prefix = cachedBillPrefix;
+  }
+  const cleanPrefix = (prefix ?? 'BILL').trim().replace(/[-_]+$/, '');
+
+  const rawBill = (entry.billNumber || '').trim();
+  let billNum = '';
+
+  // Extract the bill number portion alone:
+  // e.g. '000002' from 'BILL-000002', '2' from 'BILL-2', '000002' from '000002'
+  const match = rawBill.match(/^(?:.*[-_]|[A-Za-z]+)?(\d+)$/);
+  if (match) {
+    billNum = match[1].padStart(6, '0');
+  } else if (rawBill) {
+    billNum = rawBill.replace(/[^a-zA-Z0-9_-]/g, '_');
+  } else {
+    billNum = (entry.id || '1').replace(/[^a-zA-Z0-9_-]/g, '_');
+  }
+
+  // If cleanPrefix is present, strip it from billNum if already prefixed to avoid duplicate prefix
+  if (cleanPrefix) {
+    const pfxRegex = new RegExp(`^${cleanPrefix}[-_]?`, 'i');
+    if (billNum.match(pfxRegex)) {
+      billNum = billNum.replace(pfxRegex, '');
+    }
+    return `${cleanPrefix}-${billNum}`;
+  }
+
+  return billNum;
+}
+
+/** Suggested JPG filename for a given entry: e.g. 'AS-000002.jpg' */
+export function receiptFilename(
+  entry: BoxEntry,
+  customerOrPrefix?: Customer | string,
+  prefixArg?: string
+): string {
+  const billId = receiptBillNumber(entry, customerOrPrefix, prefixArg);
+  return `${billId}.jpg`;
 }
 
 async function pdfBlobToImageBlob(pdfBlob: Blob): Promise<Blob> {
@@ -161,6 +212,9 @@ export async function downloadReceiptAsPDF(
   action: 'download' | 'open' | 'print' | 'base64' = 'download'
 ): Promise<string | void> {
   const settings = await SettingsDB.get();
+  if (settings && typeof settings.billPrefix === 'string') {
+    cachedBillPrefix = settings.billPrefix;
+  }
   
   // Half A4 size (A5 Landscape): 210mm x 148.5mm
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [210, 148.5] });
@@ -207,7 +261,7 @@ export async function downloadReceiptAsPDF(
     const url = URL.createObjectURL(imageBlob);
 
     if (action === 'open') {
-      const filename = receiptFilename(entry, customer);
+      const filename = receiptFilename(entry, customer, settings?.billPrefix);
       const html = `
         <!DOCTYPE html>
         <html>
@@ -239,7 +293,7 @@ export async function downloadReceiptAsPDF(
 
     const a = document.createElement('a');
     a.href = url;
-    a.download = receiptFilename(entry, customer);
+    a.download = receiptFilename(entry, customer, settings?.billPrefix);
     document.body.appendChild(a);
     a.click();
     setTimeout(() => {
@@ -444,7 +498,13 @@ export async function buildWhatsAppPayload(
   const billDate = format(new Date(entry.entryDate), 'dd-MM-yyyy');
 
   // Dynamic history for payload (matching Dispatch UI logic)
-  const history = await CustomerDB.getHistorySummary(customer.id, entry.billNumber);
+  const [history, settings] = await Promise.all([
+    CustomerDB.getHistorySummary(customer.id, entry.billNumber),
+    SettingsDB.get(),
+  ]);
+  if (settings && typeof settings.billPrefix === 'string') {
+    cachedBillPrefix = settings.billPrefix;
+  }
   const previousBalanceBox = history.cumulativeBalance;
   const todayFishBox = entry.currentQuantity;
   const totalBox = previousBalanceBox + todayFishBox;
@@ -525,7 +585,7 @@ export async function buildWhatsAppPayload(
   //
   // URL Format: fitshare://send?phone=<encoded_phone>&file=<encoded_filename>
   // ──────────────────────────────────────────────────────────────────────────
-  const pdfFilename = receiptFilename(entry, customer);
+  const pdfFilename = receiptFilename(entry, customer, settings?.billPrefix);
   const fitshareUrl = `fitshare://send?phone=${encodeURIComponent(phonePlus)}&file=${encodeURIComponent(pdfFilename)}`;
 
   return {
@@ -593,10 +653,42 @@ export async function shareReceiptViaWhatsApp(
   customer: Customer,
   overridePhone?: string,
 ): Promise<void> {
-  if (isMobileDevice()) {
-    await shareMobile(entry, customer, overridePhone);
+  const settings = await SettingsDB.get();
+  if (settings && typeof settings.billPrefix === 'string') {
+    cachedBillPrefix = settings.billPrefix;
+  }
+  const shareMethod = settings?.whatsappShareMethod || 'Direct WhatsApp Share';
+
+  if (shareMethod === 'Direct WhatsApp Share') {
+    const mobile = (overridePhone || customer.mobile || customer.alternateMobile || '').trim();
+    if (!mobile) {
+      throw new Error('No valid mobile number found for WhatsApp sharing.');
+    }
+
+    const base64Image = await downloadReceiptAsPDF(entry, customer, 'base64') as string;
+    const fileName = receiptFilename(entry, customer, settings?.billPrefix);
+
+    const res = await fetch('/api/whatsapp/send-direct', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        host: window.location.hostname,
+        mobile,
+        base64Image,
+        fileName
+      })
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `Direct WhatsApp Share failed with status ${res.status}`);
+    }
   } else {
-    const payload = await buildWhatsAppPayload(entry, customer, overridePhone);
-    await triggerWhatsAppAutomation(payload, entry, customer);
+    if (isMobileDevice()) {
+      await shareMobile(entry, customer, overridePhone);
+    } else {
+      const payload = await buildWhatsAppPayload(entry, customer, overridePhone);
+      await triggerWhatsAppAutomation(payload, entry, customer);
+    }
   }
 }

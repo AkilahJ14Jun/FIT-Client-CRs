@@ -24,12 +24,14 @@ import {
   Truck,
   FileText,
   Smartphone,
+  AlertTriangle,
 } from 'lucide-react';
 import { SettingsDB, type BoxEntry, type Customer, type AppSettings } from '../../db/database';
 import {
   downloadReceiptAsPDF,
   isMobileDevice,
   shareMobile,
+  receiptFilename,
 } from '../../utils/customerReceipt';
 import { WhatsAppSendModal } from './WhatsAppSendModal';
 import { format } from 'date-fns';
@@ -52,9 +54,11 @@ const ENTRY_TYPE_META: Record<string, { label: string; colour: string; bg: strin
 export const ReceiptPreviewModal: React.FC<Props> = ({
   open, entry, customer, onClose,
 }) => {
-  const [printed,     setPrinted]     = useState(false);
-  const [showWAModal, setShowWAModal] = useState(false);
-  const [sharing,     setSharing]     = useState(false);
+  const [printed,      setPrinted]      = useState(false);
+  const [showWAModal,  setShowWAModal]  = useState(false);
+  const [sharing,      setSharing]      = useState(false);
+  const [shareSuccess, setShareSuccess] = useState(false);
+  const [shareError,   setShareError]   = useState<string | null>(null);
 
   const isMobile = isMobileDevice();
 
@@ -66,6 +70,8 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
       setPrinted(false); 
       setShowWAModal(false); 
       setSharing(false);
+      setShareSuccess(false);
+      setShareError(null);
       SettingsDB.get().then(setSettings);
     }
   }, [open, entry?.id]);
@@ -84,6 +90,7 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
   };
   const date = format(new Date(entry.entryDate), 'dd MMM yyyy');
   const totalBoxes = entry.totalBoxesSent + entry.currentQuantity;
+  const shareMethod = settings?.whatsappShareMethod || 'Direct WhatsApp Share';
 
   const handlePrint = () => {
     downloadReceiptAsPDF(entry, customer);
@@ -93,19 +100,30 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
   /**
    * WhatsApp button click handler.
    *
-   * MOBILE:   Calls shareMobile() — downloads PDF then opens WhatsApp app via wa.me.
-   *           No modal needed; the Windows automation doesn't exist on mobile.
+   * DIRECT SHARE: Calls WhatsApp Cloud API backend (/api/whatsapp/send-direct)
+   *               and sends the receipt image directly to the customer.
    *
-   * DESKTOP:  Opens the existing 3-step WhatsAppSendModal (fitshare:// automation).
+   * AUTOMATED SHARE (DESKTOP): Opens 3-step WhatsAppSendModal (fitshare:// automation).
+   *
+   * MOBILE: Calls shareMobile() — downloads PDF then opens WhatsApp app via wa.me.
    */
   const handleWhatsApp = async () => {
-    const shareMethod = settings?.whatsappShareMethod || 'Direct WhatsApp Share';
-    if (shareMethod === 'Direct WhatsApp Share') {
+    setShareSuccess(false);
+    setShareError(null);
+
+    const currentSettings = settings || await SettingsDB.get();
+    const effectiveMethod = currentSettings?.whatsappShareMethod || 'Direct WhatsApp Share';
+
+    if (effectiveMethod === 'Direct WhatsApp Share') {
       setSharing(true);
       try {
+        const mobile = (customer.mobile || customer.alternateMobile || '').trim();
+        if (!mobile) {
+          throw new Error('No mobile number saved for this customer.');
+        }
+
         const base64Image = await downloadReceiptAsPDF(entry, customer, 'base64') as string;
-        const msg = entry.billNumber;
-        const mobile = customer.mobile || customer.alternateMobile || '9999999999';
+        const fileName = receiptFilename(entry, customer, currentSettings?.billPrefix);
         
         const res = await fetch('/api/whatsapp/send-direct', {
           method: 'POST',
@@ -113,9 +131,8 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
           body: JSON.stringify({
             host: window.location.hostname,
             mobile,
-            msg,
             base64Image,
-            fileName: `Receipt_${entry.billNumber}.jpg`
+            fileName
           })
         });
         
@@ -124,10 +141,11 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
           throw new Error(errData.error || `Error ${res.status}`);
         }
         
-        alert('Direct WhatsApp Share successful!');
+        setShareSuccess(true);
+        setTimeout(() => setShareSuccess(false), 5000);
       } catch (err: any) {
         console.error('Direct Share Error', err);
-        alert('Direct WhatsApp Share failed: ' + err.message);
+        setShareError(err.message || 'Direct WhatsApp Share failed');
       } finally {
         setSharing(false);
       }
@@ -167,7 +185,7 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
               Entry Saved Successfully
             </p>
             <p className="text-blue-200 text-sm mt-0.5">
-              Customer receipt is ready — PDF downloaded & share via WhatsApp
+              Customer receipt is ready — download PDF or share via WhatsApp
             </p>
           </div>
           <button
@@ -385,21 +403,35 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
               }
             </button>
 
-            {/* WhatsApp — label and behaviour adapts to device */}
+            {/* WhatsApp — label and behaviour adapts to device and shareMethod */}
             <button
               onClick={handleWhatsApp}
               disabled={sharing}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-sm bg-green-600 text-white hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed"
+              className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-sm ${
+                shareSuccess
+                  ? 'bg-emerald-700 text-white'
+                  : 'bg-green-600 text-white hover:bg-green-700'
+              } disabled:opacity-60 disabled:cursor-not-allowed`}
             >
               {sharing ? (
                 <>
                   <MessageCircle size={16} className="animate-pulse" />
-                  Opening WhatsApp…
+                  {shareMethod === 'Direct WhatsApp Share' ? 'Sending via WhatsApp…' : 'Opening WhatsApp…'}
+                </>
+              ) : shareSuccess ? (
+                <>
+                  <CheckCircle2 size={16} />
+                  Shared via WhatsApp ✓
                 </>
               ) : isMobile ? (
                 <>
                   <MessageCircle size={16} />
                   Share via WhatsApp
+                </>
+              ) : shareMethod === 'Direct WhatsApp Share' ? (
+                <>
+                  <MessageCircle size={16} />
+                  Direct WhatsApp Share
                 </>
               ) : (
                 <>
@@ -410,8 +442,22 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
             </button>
           </div>
 
+          {/* Feedback banners */}
+          {shareSuccess && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-200 text-green-800 rounded-xl text-xs font-medium">
+              <CheckCircle2 size={15} className="text-green-600 shrink-0" />
+              <span>Direct WhatsApp Share successful! Customer receipt has been delivered.</span>
+            </div>
+          )}
+          {shareError && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 text-red-800 rounded-xl text-xs font-medium">
+              <AlertTriangle size={15} className="text-red-500 shrink-0" />
+              <span>Direct WhatsApp Share failed: {shareError}</span>
+            </div>
+          )}
+
           {/* No-phone warning */}
-          {!customer.mobile?.trim() && (
+          {!customer.mobile?.trim() && !customer.alternateMobile?.trim() && (
             <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-center">
               ⚠️ No mobile number saved for this customer — WhatsApp sharing requires a phone number.
               <br />Please update the customer record first.

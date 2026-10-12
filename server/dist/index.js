@@ -117,115 +117,463 @@ app.delete("/api/customers/:id", (req, res) => __awaiter(void 0, void 0, void 0,
     yield logAudit("DELETE", "Customer", req.params.id, `Deleted customer: ${customer.customerName}`);
     res.json({ success: true });
 }));
-// ─── Direct WhatsApp Share ───────────────────────────────────
-app.post("/api/whatsapp/send-direct", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b;
-    const { host, mobile, msg, base64Image, fileName } = req.body;
-    const apiKey = process.env.WHATSAPP_API_KEY;
-    const apiHost = process.env.WHATSAPP_API_HOST || host;
-    if (!apiKey) {
-        return res.status(500).json({ error: "WHATSAPP_API_KEY environment variable is not set" });
-    }
-    // Allow self-signed certs for local IPs
-    process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+// ─── Direct WhatsApp Share Helpers ───────────────────────────
+// Formats timestamp including seconds: YYYY-MM-DD HH:mm:ss
+function formatLogTimestamp(d = new Date()) {
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+// Write to WA_FIT.log in the server folder
+function writeWaFitLog(entry) {
     try {
-        const buffer = Buffer.from(base64Image.replace(/^data:image\/\w+;base64,/, ""), "base64");
-        // 1. Upload Media
-        const uploadFormData = new FormData();
-        const fileBlob = new Blob([buffer]);
-        uploadFormData.append('file', fileBlob, fileName || 'receipt.jpg');
-        const uploadRes = yield fetch(`https://${apiHost}/wapp/api/upload/media`, {
-            method: 'POST',
-            headers: {
-                'X-API-KEY': apiKey
-            },
-            body: uploadFormData
-        });
-        if (!uploadRes.ok) {
-            const errText = yield uploadRes.text();
-            throw new Error(`Upload API failed (${uploadRes.status}): ${errText}`);
-        }
-        const uploadData = yield uploadRes.json();
-        const mediaid = uploadData.mediaid || uploadData.id || uploadData.mediaId || ((_a = uploadData.data) === null || _a === void 0 ? void 0 : _a.mediaid) || ((_b = uploadData.data) === null || _b === void 0 ? void 0 : _b.id);
-        if (!mediaid) {
-            throw new Error(`Could not find mediaid in response: ${JSON.stringify(uploadData)}`);
-        }
-        // 2. Send Message
-        const sendFormData = new FormData();
-        sendFormData.append('apikey', apiKey);
-        sendFormData.append('mobile', mobile);
-        sendFormData.append('msg', msg);
-        sendFormData.append('mediaid', mediaid);
-        const sendRes = yield fetch(`https://${apiHost}/wapp/v2/api/send`, {
-            method: 'POST',
-            body: sendFormData
-        });
-        if (!sendRes.ok) {
-            const errText = yield sendRes.text();
-            throw new Error(`Send API failed (${sendRes.status}): ${errText}`);
-        }
-        const sendData = yield sendRes.json();
-        // Update .env stats
-        try {
-            const envPath = path_1.default.join(__dirname, "../.env");
-            if (fs_1.default.existsSync(envPath)) {
-                let content = fs_1.default.readFileSync(envPath, "utf-8");
-                let lines = content.split(/\r?\n/);
-                const todayStr = new Date().toISOString().split("T")[0];
-                let foundRemaining = false;
-                let foundTotal = false;
-                let foundToday = false;
-                let foundLastDate = false;
-                let currentLastDate = "";
-                for (let i = 0; i < lines.length; i++) {
-                    if (lines[i].startsWith("Last Sent Date=")) {
-                        currentLastDate = lines[i].split("=")[1].trim();
-                        lines[i] = `Last Sent Date=${todayStr}`;
-                        foundLastDate = true;
-                    }
-                }
-                for (let i = 0; i < lines.length; i++) {
-                    if (lines[i].startsWith("Remaining Msg Count=")) {
-                        let count = parseInt(lines[i].split("=")[1], 10) || 0;
-                        lines[i] = `Remaining Msg Count=${Math.max(0, count - 1)}`;
-                        foundRemaining = true;
-                    }
-                    if (lines[i].startsWith("Total Msg Sent=")) {
-                        let count = parseInt(lines[i].split("=")[1], 10) || 0;
-                        lines[i] = `Total Msg Sent=${count + 1}`;
-                        foundTotal = true;
-                    }
-                    if (lines[i].startsWith("Msg Sent Today=")) {
-                        let count = parseInt(lines[i].split("=")[1], 10) || 0;
-                        if (currentLastDate !== todayStr && currentLastDate !== "") {
-                            count = 0; // Reset for new day
-                        }
-                        lines[i] = `Msg Sent Today=${count + 1}`;
-                        foundToday = true;
-                    }
-                }
-                if (!foundRemaining)
-                    lines.push(`Remaining Msg Count=4999`);
-                if (!foundTotal)
-                    lines.push(`Total Msg Sent=1`);
-                if (!foundToday)
-                    lines.push(`Msg Sent Today=1`);
-                if (!foundLastDate)
-                    lines.push(`Last Sent Date=${todayStr}`);
-                fs_1.default.writeFileSync(envPath, lines.join("\n"));
+        const logPath = path_1.default.resolve(__dirname, "../WA_FIT.log");
+        const timestamp = formatLogTimestamp();
+        const reasonStr = entry.reason ? ` | Reason: ${entry.reason.replace(/\r?\n|\r/g, " ")}` : "";
+        const maxCountStr = entry.maxMsgCount !== undefined && entry.maxMsgCount >= 0 ? ` | Max Msg Count: ${entry.maxMsgCount}` : "";
+        const logLine = `[${timestamp}] [${entry.status}] File: ${entry.fileName} | Size: ${entry.fileSize} bytes | Mobile: ${entry.mobile} | Status: ${entry.status === "SUCCESS" ? "Success" : "Failure"}${maxCountStr}${reasonStr}\n`;
+        fs_1.default.appendFileSync(logPath, logLine);
+    }
+    catch (logErr) {
+        console.error("Failed to write to WA_FIT.log", logErr);
+    }
+}
+// Decrement 'Max Msg Count' and update stats in server/.env
+function decrementMaxMsgCountInEnv() {
+    const envPath = path_1.default.resolve(__dirname, "../.env");
+    let updatedMax = -1;
+    if (!fs_1.default.existsSync(envPath))
+        return updatedMax;
+    try {
+        const content = fs_1.default.readFileSync(envPath, "utf-8");
+        const lines = content.split(/\r?\n/);
+        const now = new Date();
+        const pad = (n) => String(n).padStart(2, "0");
+        const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+        let currentLastDate = "";
+        for (let i = 0; i < lines.length; i++) {
+            if (lines[i].startsWith("Last Sent Date=")) {
+                currentLastDate = lines[i].split("=")[1].trim();
+                lines[i] = `Last Sent Date=${todayStr}`;
             }
         }
-        catch (e) {
-            console.error("Failed to update .env stats", e);
+        let foundMax = false;
+        let foundRemaining = false;
+        let foundTotal = false;
+        let foundToday = false;
+        let foundLastDate = false;
+        for (let i = 0; i < lines.length; i++) {
+            if (lines[i].startsWith("Max Msg Count=")) {
+                let count = parseInt(lines[i].split("=")[1], 10);
+                if (isNaN(count))
+                    count = 5000;
+                updatedMax = Math.max(0, count - 1);
+                lines[i] = `Max Msg Count=${updatedMax}`;
+                foundMax = true;
+            }
+            if (lines[i].startsWith("Remaining Msg Count=")) {
+                let count = parseInt(lines[i].split("=")[1], 10);
+                if (isNaN(count))
+                    count = updatedMax >= 0 ? updatedMax : 5000;
+                lines[i] = `Remaining Msg Count=${Math.max(0, count - 1)}`;
+                foundRemaining = true;
+            }
+            if (lines[i].startsWith("Total Msg Sent=")) {
+                let count = parseInt(lines[i].split("=")[1], 10) || 0;
+                lines[i] = `Total Msg Sent=${count + 1}`;
+                foundTotal = true;
+            }
+            if (lines[i].startsWith("Msg Sent Today=")) {
+                let count = parseInt(lines[i].split("=")[1], 10) || 0;
+                if (currentLastDate !== todayStr && currentLastDate !== "") {
+                    count = 0;
+                }
+                lines[i] = `Msg Sent Today=${count + 1}`;
+                foundToday = true;
+            }
+            if (lines[i].startsWith("Last Sent Date=")) {
+                foundLastDate = true;
+            }
         }
-        res.json(sendData);
+        if (!foundMax) {
+            updatedMax = 4999;
+            lines.push(`Max Msg Count=4999`);
+        }
+        if (!foundRemaining)
+            lines.push(`Remaining Msg Count=${updatedMax >= 0 ? updatedMax : 4999}`);
+        if (!foundTotal)
+            lines.push(`Total Msg Sent=1`);
+        if (!foundToday)
+            lines.push(`Msg Sent Today=1`);
+        if (!foundLastDate)
+            lines.push(`Last Sent Date=${todayStr}`);
+        fs_1.default.writeFileSync(envPath, lines.join("\n"));
+    }
+    catch (err) {
+        console.error("Failed to update stats in .env", err);
+    }
+    return updatedMax;
+}
+let cachedSession = null;
+let lastSessionTime = 0;
+// Log in to WhatsApp website using username & password and retrieve / generate the active API key and session
+function getOrRefreshWhatsAppSession() {
+    return __awaiter(this, void 0, void 0, function* () {
+        var _a;
+        const now = Date.now();
+        // Reuse valid cached session for up to 6 hours
+        if (cachedSession && (now - lastSessionTime < 6 * 60 * 60 * 1000) && cachedSession.apiKey && cachedSession.token) {
+            return cachedSession;
+        }
+        const username = process.env.WHATSAPP_USERNAME;
+        const password = process.env.WHATSAPP_PASSWORD;
+        const phoneNoId = process.env.WHATSAPP_PHONE_ID;
+        const apiHostUrl = process.env.WHATSAPP_API_HOST || "https://waapi.automationclub.in/api/v2/whatsapp-business/messages";
+        let website = process.env.WHATSAPP_WEBSITE;
+        if (!website) {
+            try {
+                website = new URL(apiHostUrl).origin;
+            }
+            catch (_b) {
+                website = "https://waapi.automationclub.in";
+            }
+        }
+        if (!username || !password) {
+            throw new Error("WHATSAPP_USERNAME and WHATSAPP_PASSWORD environment variables are required for WhatsApp website login.");
+        }
+        const hostHeader = new URL(website).host;
+        console.log(`[Direct WA] Logging into WhatsApp provider website at ${website}...`);
+        const loginRes = yield fetch(`${website}/api/v1/login`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-Client-Host": hostHeader,
+                "X-Forwarded-Host": hostHeader
+            },
+            body: JSON.stringify({ email: username, password })
+        });
+        if (!loginRes.ok) {
+            const errText = yield loginRes.text();
+            throw new Error(`WhatsApp website login failed (${loginRes.status}): ${errText}`);
+        }
+        const loginData = yield loginRes.json();
+        const token = loginData.accessToken;
+        const setCookie = loginRes.headers.get("set-cookie") || `vbAccessToken=${token}`;
+        if (!token) {
+            throw new Error("No access token returned from WhatsApp website login.");
+        }
+        // Check existing saved API key
+        let apiKey = process.env.WHATSAPP_API_KEY || "";
+        try {
+            const keyRes = yield fetch(`${website}/api/v2/whatsapp-business/apikey`, {
+                headers: {
+                    "Authorization": `Bearer ${token}`,
+                    "Cookie": `vbAccessToken=${token}`,
+                    "X-Client-Host": hostHeader,
+                    "X-Forwarded-Host": hostHeader
+                }
+            });
+            if (keyRes.ok) {
+                const keyData = yield keyRes.json();
+                if ((_a = keyData === null || keyData === void 0 ? void 0 : keyData.credentials) === null || _a === void 0 ? void 0 : _a.apiKey) {
+                    apiKey = keyData.credentials.apiKey;
+                }
+            }
+        }
+        catch (keyErr) {
+            console.warn("[Direct WA] Error reading existing key:", keyErr);
+        }
+        // If no saved key, generate and save one
+        if (!apiKey) {
+            console.log("[Direct WA] Generating and saving a new API key...");
+            const genRes = yield fetch(`${website}/api/v2/whatsapp-business/apikey`, {
+                method: "POST",
+                headers: {
+                    "Authorization": `Bearer ${token}`,
+                    "Cookie": `vbAccessToken=${token}`,
+                    "X-Client-Host": hostHeader,
+                    "X-Forwarded-Host": hostHeader
+                }
+            });
+            if (!genRes.ok) {
+                throw new Error(`Failed to generate WhatsApp API key: ${yield genRes.text()}`);
+            }
+            const genData = yield genRes.json();
+            apiKey = genData.apiKey;
+            const saveRes = yield fetch(`${website}/api/v2/whatsapp-business/apikey/save`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${token}`,
+                    "Cookie": `vbAccessToken=${token}`,
+                    "X-Client-Host": hostHeader,
+                    "X-Forwarded-Host": hostHeader
+                },
+                body: JSON.stringify({
+                    apiKey,
+                    phoneNumbersId: phoneNoId ? [phoneNoId] : []
+                })
+            });
+            if (!saveRes.ok) {
+                console.warn("[Direct WA] Could not link phone number to API key:", yield saveRes.text());
+            }
+        }
+        if (apiKey) {
+            process.env.WHATSAPP_API_KEY = apiKey;
+            try {
+                const envPath = path_1.default.resolve(__dirname, "../.env");
+                if (fs_1.default.existsSync(envPath)) {
+                    let content = fs_1.default.readFileSync(envPath, "utf-8");
+                    if (content.includes("WHATSAPP_API_KEY=")) {
+                        content = content.replace(/WHATSAPP_API_KEY=.*/, `WHATSAPP_API_KEY=${apiKey}`);
+                    }
+                    else {
+                        content += `\nWHATSAPP_API_KEY=${apiKey}`;
+                    }
+                    fs_1.default.writeFileSync(envPath, content);
+                }
+            }
+            catch (envErr) {
+                console.error("[Direct WA] Failed to persist refreshed WHATSAPP_API_KEY to .env", envErr);
+            }
+        }
+        cachedSession = { apiKey, token, cookie: setCookie, website };
+        lastSessionTime = now;
+        return cachedSession;
+    });
+}
+// Uploads receipt buffer to Automation Club's official cloud media storage (/api/s3-upload)
+function uploadReceiptToCloudStorage(buffer, fileName) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const session = yield getOrRefreshWhatsAppSession();
+        const { token, website } = session;
+        const host = new URL(website).host;
+        console.log(`[Direct WA] Requesting presigned upload URL from ${website}/api/s3-upload...`);
+        const s3Res = yield fetch(`${website}/api/s3-upload`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${token}`,
+                "Cookie": `vbAccessToken=${token}`,
+                "X-Client-Host": host,
+                "X-Forwarded-Host": host
+            },
+            body: JSON.stringify({
+                fileName: fileName || "receipt.jpg",
+                fileType: "image/jpeg",
+                fileSize: buffer.length,
+                subFolder: "file-manager"
+            })
+        });
+        if (!s3Res.ok) {
+            const errText = yield s3Res.text();
+            throw new Error(`Cloud storage pre-sign failed (${s3Res.status}): ${errText}`);
+        }
+        const { url, s3Url } = (yield s3Res.json());
+        if (!url || !s3Url) {
+            throw new Error("Invalid response from cloud storage API: missing url or s3Url");
+        }
+        console.log(`[Direct WA] Uploading ${buffer.length} bytes to cloud storage...`);
+        const putRes = yield fetch(url, {
+            method: "PUT",
+            headers: {
+                "Content-Type": "image/jpeg"
+            },
+            body: new Uint8Array(buffer)
+        });
+        if (!putRes.ok) {
+            const errText = yield putRes.text();
+            throw new Error(`Uploading receipt to cloud storage failed (${putRes.status}): ${errText}`);
+        }
+        console.log(`[Direct WA] Receipt successfully stored on cloud storage: ${s3Url}`);
+        return s3Url;
+    });
+}
+// ─── Direct WhatsApp Share ───────────────────────────────────
+app.post("/api/whatsapp/send-direct", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    const { host, mobile, msg, base64Image, fileName, caption, mediaId } = req.body;
+    const actualFileName = fileName || "receipt.jpg";
+    // Allow self-signed certs for local IPs
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+    let bufferSize = 0;
+    let cleanMobile = String(mobile || "").replace(/\D/g, "");
+    if (cleanMobile.length === 10) {
+        cleanMobile = `91${cleanMobile}`;
+    }
+    // Basic validation
+    if (!base64Image) {
+        const errMsg = "base64Image is required for customer receipt sharing in image format.";
+        writeWaFitLog({ status: "FAILURE", fileName: actualFileName, fileSize: 0, mobile: cleanMobile || String(mobile), reason: errMsg });
+        return res.status(400).json({ error: errMsg });
+    }
+    if (!cleanMobile || cleanMobile.length < 10) {
+        const errMsg = `Valid mobile number is required (got '${mobile}').`;
+        writeWaFitLog({ status: "FAILURE", fileName: actualFileName, fileSize: 0, mobile: cleanMobile || String(mobile), reason: errMsg });
+        return res.status(400).json({ error: errMsg });
+    }
+    // Check quota limit in .env
+    try {
+        const envPath = path_1.default.resolve(__dirname, "../.env");
+        if (fs_1.default.existsSync(envPath)) {
+            const content = fs_1.default.readFileSync(envPath, "utf-8");
+            const match = content.match(/Max Msg Count=(\d+)/);
+            if (match && parseInt(match[1], 10) <= 0) {
+                const errMsg = "Max Msg Count quota reached (0 remaining). Direct WhatsApp sharing paused.";
+                writeWaFitLog({ status: "FAILURE", fileName: actualFileName, fileSize: 0, mobile: cleanMobile, reason: errMsg });
+                return res.status(403).json({ error: errMsg });
+            }
+        }
+    }
+    catch (quotaErr) {
+        console.warn("Could not check Max Msg Count quota:", quotaErr);
+    }
+    try {
+        const rawBase64 = base64Image.replace(/^data:image\/\w+;base64,/, "");
+        const buffer = Buffer.from(rawBase64, "base64");
+        bufferSize = buffer.length;
+        // Retrieve session and credentials
+        const session = yield getOrRefreshWhatsAppSession();
+        let apiKey = session.apiKey || process.env.WHATSAPP_API_KEY;
+        const phoneNoId = process.env.WHATSAPP_PHONE_ID;
+        const apiHostUrl = process.env.WHATSAPP_API_HOST || "https://waapi.automationclub.in/api/v2/whatsapp-business/messages";
+        if (!phoneNoId) {
+            throw new Error("WHATSAPP_PHONE_ID environment variable is missing.");
+        }
+        // Support both 'Send Image by Media ID' and 'Send Image by URL' methods per docs
+        const effectiveMediaId = mediaId || process.env.WHATSAPP_MEDIA_ID;
+        let imageUrl = "";
+        if (!effectiveMediaId) {
+            console.log(`[Direct WA] Uploading receipt image to Automation Club cloud storage...`);
+            imageUrl = yield uploadReceiptToCloudStorage(buffer, actualFileName);
+            console.log(`[Direct WA] Image URL ready: ${imageUrl}`);
+        }
+        // Extract bill number for approved template variable {{1}} (e.g. 'AS-000002')
+        const billMatch = actualFileName.match(/^Receipt_([^_]+)/i) || actualFileName.match(/^([^_]+)_\d{8}\.[^.]+$/i);
+        const billNo = billMatch ? billMatch[1] : actualFileName.replace(/\.[^/.]+$/, "");
+        // 1. Primary: Approved Meta template "receipt" (delivers even if 24 hours have passed!)
+        const headerParam = effectiveMediaId
+            ? { type: "image", id: isNaN(Number(effectiveMediaId)) ? effectiveMediaId : Number(effectiveMediaId) }
+            : { type: "image", url: imageUrl };
+        const templatePayload = {
+            to: cleanMobile,
+            phoneNoId: phoneNoId,
+            type: "template",
+            name: "receipt",
+            language: "en",
+            headerParams: [headerParam],
+            bodyParams: [billNo]
+        };
+        // 2. Secondary fallback: Direct image payload (caption removed)
+        const directImagePayload = effectiveMediaId
+            ? {
+                to: cleanMobile,
+                phoneNoId: phoneNoId,
+                type: "image",
+                id: isNaN(Number(effectiveMediaId)) ? effectiveMediaId : Number(effectiveMediaId)
+            }
+            : {
+                to: cleanMobile,
+                phoneNoId: phoneNoId,
+                type: "image",
+                url: imageUrl
+            };
+        if (caption && caption.trim()) {
+            directImagePayload.caption = caption.trim();
+        }
+        console.log(`[Direct WA] Sending receipt to ${cleanMobile} via approved 'receipt' template...`);
+        let sendPayload = templatePayload;
+        let sendRes = yield fetch(apiHostUrl, {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${apiKey}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(sendPayload)
+        });
+        // If template send returns error, fallback to direct image message
+        if (!sendRes.ok) {
+            console.warn(`[Direct WA] Template delivery failed (${sendRes.status}), attempting direct image message...`);
+            sendPayload = directImagePayload;
+            sendRes = yield fetch(apiHostUrl, {
+                method: "POST",
+                headers: {
+                    "Authorization": `Bearer ${apiKey}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(sendPayload)
+            });
+        }
+        // If 401 Unauthorized, re-authenticate session and retry
+        if (sendRes.status === 401 && process.env.WHATSAPP_USERNAME && process.env.WHATSAPP_PASSWORD) {
+            console.log("[Direct WA] API Key unauthorized (401), refreshing session...");
+            cachedSession = null;
+            const refreshed = yield getOrRefreshWhatsAppSession();
+            apiKey = refreshed.apiKey;
+            sendRes = yield fetch(apiHostUrl, {
+                method: "POST",
+                headers: {
+                    "Authorization": `Bearer ${apiKey}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(sendPayload)
+            });
+        }
+        // If 401 Unauthorized, re-authenticate session and retry
+        if (sendRes.status === 401 && process.env.WHATSAPP_USERNAME && process.env.WHATSAPP_PASSWORD) {
+            console.log("[Direct WA] API Key unauthorized (401), refreshing session...");
+            cachedSession = null;
+            const refreshed = yield getOrRefreshWhatsAppSession();
+            apiKey = refreshed.apiKey;
+            sendRes = yield fetch(apiHostUrl, {
+                method: "POST",
+                headers: {
+                    "Authorization": `Bearer ${apiKey}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(sendPayload)
+            });
+        }
+        if (!sendRes.ok) {
+            const errText = yield sendRes.text();
+            let parsedErr = errText;
+            try {
+                const errJson = JSON.parse(errText);
+                parsedErr = errJson.message || ((_a = errJson.error) === null || _a === void 0 ? void 0 : _a.message) || errText;
+            }
+            catch (_b) { }
+            throw new Error(`WhatsApp API delivery failed (${sendRes.status}): ${parsedErr}`);
+        }
+        const sendData = yield sendRes.json();
+        // 3. Decrement 'Max Msg Count' in .env after successful share
+        const newMaxCount = decrementMaxMsgCountInEnv();
+        // 4. Log successful sharing activity in WA_FIT.log
+        writeWaFitLog({
+            status: "SUCCESS",
+            fileName: actualFileName,
+            fileSize: bufferSize,
+            mobile: cleanMobile,
+            maxMsgCount: newMaxCount
+        });
+        res.json({
+            success: true,
+            data: sendData,
+            maxMsgCount: newMaxCount
+        });
     }
     catch (err) {
         console.error("Direct WhatsApp Share error:", err);
-        let errorMessage = err.message;
-        if (errorMessage === "fetch failed") {
-            errorMessage = `Fetch failed to WhatsApp API at https://${apiHost}. Ensure the host is correct and the service is running. You can configure WHATSAPP_API_HOST in server/.env`;
+        let errorMessage = err.message || "Unknown error";
+        if (errorMessage.includes("fetch failed")) {
+            errorMessage = `Fetch failed to WhatsApp API. Ensure host and network are accessible.`;
         }
+        // Log failure with reason in WA_FIT.log
+        writeWaFitLog({
+            status: "FAILURE",
+            fileName: actualFileName,
+            fileSize: bufferSize,
+            mobile: cleanMobile,
+            reason: errorMessage
+        });
         res.status(500).json({ error: errorMessage });
     }
 }));

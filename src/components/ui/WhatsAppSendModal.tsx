@@ -13,12 +13,14 @@ import {
   FileText,
   AlertTriangle,
   ExternalLink,
+  CheckCircle2,
 } from 'lucide-react';
-import type { BoxEntry, Customer } from '../../db/database';
+import { SettingsDB, type BoxEntry, type Customer, type AppSettings } from '../../db/database';
 import {
   triggerWhatsAppAutomation,
   buildWhatsAppPayload,
   receiptFilename,
+  downloadReceiptAsPDF,
   type WhatsAppPayload,
 } from '../../utils/customerReceipt';
 import { useTranslation } from '../../i18n/TranslationProvider';
@@ -37,10 +39,14 @@ export const WhatsAppSendModal: React.FC<Props> = ({
   const [payload, setPayload] = useState<WhatsAppPayload | null>(null);
   const [altPhone, setAltPhone] = useState<string>('');
   const [launching, setLaunching] = useState(false);
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Reset state whenever a new entry/customer arrives
   useEffect(() => {
     if (open && entry && customer) {
+      setStatusMsg(null);
+      SettingsDB.get().then(setSettings);
       buildWhatsAppPayload(entry, customer).then(p => {
         setPayload(p);
         setAltPhone(p.phone || '');
@@ -57,18 +63,59 @@ export const WhatsAppSendModal: React.FC<Props> = ({
 
   if (!open || !entry || !customer || !payload) return null;
 
+  const shareMethod = settings?.whatsappShareMethod || 'Direct WhatsApp Share';
+  const isDirectShare = shareMethod === 'Direct WhatsApp Share';
   const hasPhone = !!altPhone?.trim();
-  const filename = receiptFilename(entry);
+  const filename = receiptFilename(entry, customer, settings?.billPrefix);
 
-  const handleLaunchAutomation = () => {
+  const handleSend = async () => {
     if (launching) return;
+    setStatusMsg(null);
     setLaunching(true);
 
-    const finalPayload = { ...payload, phone: altPhone };
-    triggerWhatsAppAutomation(finalPayload, entry, customer);
+    try {
+      const targetPhone = altPhone.trim();
+      if (!targetPhone) {
+        throw new Error('Please specify a valid phone number.');
+      }
 
-    // Reset after some time to allow potential retry but prevent rapid clicks
-    setTimeout(() => setLaunching(false), 5000);
+      if (isDirectShare) {
+        const base64Image = await downloadReceiptAsPDF(entry, customer, 'base64') as string;
+        const fileName = receiptFilename(entry, customer, settings?.billPrefix);
+
+        const res = await fetch('/api/whatsapp/send-direct', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            host: window.location.hostname,
+            mobile: targetPhone,
+            base64Image,
+            fileName
+          })
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || `Error ${res.status}`);
+        }
+
+        setStatusMsg({ type: 'success', text: 'Receipt sent successfully via Direct WhatsApp Share!' });
+        setTimeout(() => {
+          onClose();
+        }, 1800);
+      } else {
+        const finalPayload = { ...payload, phone: targetPhone };
+        await triggerWhatsAppAutomation(finalPayload, entry, customer);
+        setTimeout(() => setLaunching(false), 5000);
+      }
+    } catch (err: any) {
+      console.error('WhatsApp Share Error:', err);
+      setStatusMsg({ type: 'error', text: err.message || 'Failed to send receipt via WhatsApp.' });
+    } finally {
+      if (isDirectShare) {
+        setLaunching(false);
+      }
+    }
   };
 
   return (
@@ -92,7 +139,9 @@ export const WhatsAppSendModal: React.FC<Props> = ({
               Send Receipt via WhatsApp
             </p>
             <p className="text-green-100 text-xs mt-0.5">
-              Follow all 3 steps to share the image with the customer
+              {isDirectShare
+                ? 'Send receipt image directly to the customer via WhatsApp Cloud API'
+                : 'Follow all 3 steps to share the image with the customer'}
             </p>
           </div>
           <button
@@ -115,11 +164,31 @@ export const WhatsAppSendModal: React.FC<Props> = ({
           </div>
 
           <div className="text-center space-y-2">
-            <h3 className="text-lg font-bold text-gray-800">Ready for Automated Sharing</h3>
+            <h3 className="text-lg font-bold text-gray-800">
+              {isDirectShare ? 'Ready for Direct WhatsApp Sharing' : 'Ready for Automated Sharing'}
+            </h3>
             <p className="text-sm text-gray-600">
-              This will launch a PowerShell script to automatically attach the image and send it via WhatsApp Web.
+              {isDirectShare
+                ? 'This will send the receipt image and message directly to the customer via WhatsApp Cloud API.'
+                : 'This will launch a PowerShell script to automatically attach the image and send it via WhatsApp Web.'}
             </p>
           </div>
+
+          {/* Feedback Banner */}
+          {statusMsg && (
+            <div className={`flex items-start gap-2 rounded-xl p-3 text-xs font-medium border ${
+              statusMsg.type === 'success'
+                ? 'bg-green-50 border-green-200 text-green-800'
+                : 'bg-red-50 border-red-200 text-red-800'
+            }`}>
+              {statusMsg.type === 'success' ? (
+                <CheckCircle2 size={16} className="text-green-600 shrink-0 mt-0.5" />
+              ) : (
+                <AlertTriangle size={16} className="text-red-500 shrink-0 mt-0.5" />
+              )}
+              <span>{statusMsg.text}</span>
+            </div>
+          )}
 
           {/* Summary Card */}
           <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-3">
@@ -185,7 +254,7 @@ export const WhatsAppSendModal: React.FC<Props> = ({
 
           {/* Action Button */}
           <button
-            onClick={handleLaunchAutomation}
+            onClick={handleSend}
             disabled={!hasPhone || launching}
             className={`w-full flex items-center justify-center gap-3 px-6 py-4 rounded-xl text-base font-bold transition-all shadow-md
               ${(!hasPhone || launching)
@@ -193,29 +262,47 @@ export const WhatsAppSendModal: React.FC<Props> = ({
                 : 'bg-green-600 hover:bg-green-700 text-white hover:scale-[1.02] active:scale-[0.98]'
               }`}
           >
-            <ExternalLink size={20} />
-            {launching ? t('entries.launching') : 'Launch Automated Share'}
+            {isDirectShare ? <MessageCircle size={20} /> : <ExternalLink size={20} />}
+            {launching
+              ? (isDirectShare ? 'Sending via WhatsApp…' : t('entries.launching'))
+              : (isDirectShare ? 'Direct WhatsApp Share' : 'Launch Automated Share')
+            }
           </button>
 
-          <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex gap-3">
-            <div className="shrink-0 text-blue-500 mt-0.5">ℹ️</div>
-            <div className="text-[11px] text-blue-800 leading-relaxed font-medium">
-              <strong>Instructions:</strong> After clicking launch, a browser window will open.
-              <br/><br/>
-              1. 🛑 <strong>DO NOT</strong> move your mouse or switch tabs.
-              <br/>
-              2. ⏳ <strong>WAIT</strong> for about 15 seconds.
-              <br/>
-              3. The script will automatically attach the file from <code>Downloads/FIT reports</code> and send it.
+          {isDirectShare ? (
+            <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 flex gap-3">
+              <div className="shrink-0 text-emerald-600 mt-0.5">⚡</div>
+              <div className="text-[11px] text-emerald-900 leading-relaxed font-medium">
+                <strong>Direct WhatsApp Sharing:</strong> Receipt image and text summary will be delivered immediately to the recipient via WhatsApp Cloud API without needing WhatsApp Web or desktop scripts.
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex gap-3">
+              <div className="shrink-0 text-blue-500 mt-0.5">ℹ️</div>
+              <div className="text-[11px] text-blue-800 leading-relaxed font-medium">
+                <strong>Instructions:</strong> After clicking launch, a browser window will open.
+                <br/><br/>
+                1. 🛑 <strong>DO NOT</strong> move your mouse or switch tabs.
+                <br/>
+                2. ⏳ <strong>WAIT</strong> for about 15 seconds.
+                <br/>
+                3. The script will automatically attach the file from <code>Downloads/FIT reports</code> and send it.
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── Footer ──────────────────────────────────────────────────────── */}
         <div className="px-5 py-3.5 border-t border-gray-100 bg-gray-50 flex items-center justify-between gap-3">
           <p className="text-xs text-gray-500">
-            💡 WhatsApp Web requires you to be logged in at{' '}
-            <span className="font-medium text-gray-700">web.whatsapp.com</span>
+            {isDirectShare ? (
+              <span>⚡ WhatsApp Cloud API mode active</span>
+            ) : (
+              <>
+                💡 WhatsApp Web requires you to be logged in at{' '}
+                <span className="font-medium text-gray-700">web.whatsapp.com</span>
+              </>
+            )}
           </p>
           <button
             onClick={onClose}

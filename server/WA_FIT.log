@@ -1,0 +1,20 @@
+[2026-10-09 10:05:10] [FAILURE] File: Receipt_FAIL_TEST.jpg | Size: 0 bytes | Mobile: 123 | Status: Failure | Reason: Valid mobile number is required (got '123').
+[2026-10-09 10:05:12] [SUCCESS] File: Receipt_BILL-1001.jpg | Size: 134 bytes | Mobile: 919384576675 | Status: Success | Max Msg Count: 4999
+[2026-10-09 10:07:48] [SUCCESS] File: test.jpg | Size: 68 bytes | Mobile: 911234567890 | Status: Success | Max Msg Count: 4998
+[2026-10-09 14:20:28] [SUCCESS] File: test.jpg | Size: 134 bytes | Mobile: 919384576675 | Status: Success | Max Msg Count: 4997
+[2026-10-09 14:32:36] [SUCCESS] File: Receipt_BILL-000002_20261009.jpg | Size: 70228 bytes | Mobile: 919886367656 | Status: Success | Max Msg Count: 4996
+[2026-10-09 15:56:57] [SUCCESS] File: Receipt_BILL-000002_20261009.jpg | Size: 76726 bytes | Mobile: 919886367656 | Status: Success | Max Msg Count: 4995
+[2026-10-09 16:02:53] [SUCCESS] File: Receipt_BILL-000002_20261009.jpg | Size: 134 bytes | Mobile: 919886367656 | Status: Success | Max Msg Count: 4994
+[2026-10-09 16:06:34] [SUCCESS] File: Receipt_BILL-000002_20261009.jpg | Size: 76707 bytes | Mobile: 919886367656 | Status: Success | Max Msg Count: 4993
+[2026-10-09 18:04:03] [SUCCESS] File: Receipt_BILL-000002_20261009.jpg | Size: 76727 bytes | Mobile: 919886367656 | Status: Success | Max Msg Count: 4992
+[2026-10-09 18:04:52] [SUCCESS] File: Receipt_BILL-000002_20261009.jpg | Size: 76724 bytes | Mobile: 919886367656 | Status: Success | Max Msg Count: 4991
+[2026-10-09 18:27:26] [SUCCESS] File: AS-000002.jpg | Size: 76681 bytes | Mobile: 919886367656 | Status: Success | Max Msg Count: 4990
+[2026-10-09 19:15:58] [SUCCESS] File: AS-000002.jpg | Size: 76633 bytes | Mobile: 919886367656 | Status: Success | Max Msg Count: 4989
+[2026-10-09 20:21:39] [SUCCESS] File: AS-000002.jpg | Size: 76703 bytes | Mobile: 919886367656 | Status: Success | Max Msg Count: 4988
+[2026-10-09 20:49:26] [SUCCESS] File: AS-000003.jpg | Size: 134 bytes | Mobile: 919886367656 | Status: Success | Max Msg Count: 4987
+[2026-10-09 21:01:01] [SUCCESS] File: AS-000003.jpg | Size: 79687 bytes | Mobile: 919886367656 | Status: Success | Max Msg Count: 4986
+[2026-10-10 11:12:44] [SUCCESS] File: AS-000003.jpg | Size: 79512 bytes | Mobile: 919886367656 | Status: Success | Max Msg Count: 4985
+[2026-10-10 11:33:57] [SUCCESS] File: AS-000003.jpg | Size: 79673 bytes | Mobile: 919886367656 | Status: Success | Max Msg Count: 4984
+[2026-10-10 11:35:57] [SUCCESS] File: AS-000003.jpg | Size: 79669 bytes | Mobile: 919886367656 | Status: Success | Max Msg Count: 4983
+[2026-10-10 11:45:24] [SUCCESS] File: AS-000003.jpg | Size: 79657 bytes | Mobile: 919886367656 | Status: Success | Max Msg Count: 4982
+[2026-10-12 11:43:49] [SUCCESS] File: AS-000003.jpg | Size: 80638 bytes | Mobile: 919886367656 | Status: Success | Max Msg Count: 4981

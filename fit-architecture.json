@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "FIT Client - Fish Inventory Tracking",
+    "quality_profile": "showcase"
+  },
+  "layout": {
+    "mode": "grid",
+    "origin": [40, 40],
+    "cols": 6,
+    "gapX": 40,
+    "gapY": 40,
+    "cellW": 140,
+    "cellH": 80
+  },
+  "components": [
+    { "id": "user", "type": "external", "label": "User", "sublabel": "Browser", "pos": [40, 150], "size": [120, 60] },
+    { "id": "frontend", "type": "frontend", "label": "Frontend App", "sublabel": "React / Vite", "pos": [250, 150], "size": [140, 60] },
+    { "id": "backend", "type": "backend", "label": "Backend API", "sublabel": "Express.js / Node.js", "pos": [500, 150], "size": [140, 60], "tag": "Port 3001" },
+    { "id": "db", "type": "database", "label": "Database", "sublabel": "MySQL 8.0", "pos": [750, 150], "size": [120, 60], "tag": "Docker" },
+    { "id": "whatsapp_ps", "type": "external", "label": "WhatsApp Share", "sublabel": "PowerShell Script", "pos": [250, 300], "size": [140, 60], "tag": "OS Protocol Handler" },
+    { "id": "whatsapp_web", "type": "external", "label": "WhatsApp Web", "sublabel": "Desktop Browser", "pos": [250, 450], "size": [140, 60] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "Windows Host Machine (LAN)", "wraps": ["frontend", "backend", "db", "whatsapp_ps"] }
+  ],
+  "connections": [
+    { "from": "user", "to": "frontend", "label": "HTTP" },
+    { "from": "frontend", "to": "backend", "label": "REST API (/api)" },
+    { "from": "backend", "to": "db", "label": "TypeORM", "variant": "emphasis" },
+    { "from": "frontend", "to": "whatsapp_ps", "label": "fitshare:// protocol", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "labelDy": 30 },
+    { "from": "whatsapp_ps", "to": "whatsapp_web", "label": "UI Automation", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "labelDy": 30 }
+  ]
+}

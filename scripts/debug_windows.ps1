@@ -29,4 +29,4 @@ public class Win32 {
 }
 "@
 Add-Type -TypeDefinition $Win32Code
-[Win32]::GetAllTitles() | Where-Object { $_ -like "*WhatsApp*" -or $_ -like "*Edge*" -or $_ -like "*Chrome*" } | Out-File "g:\bobby\GitHub\FIT OpBal Fix - Copy\scripts\window_debug.txt"
+[Win32]::GetAllTitles() | Where-Object { $_ -like "*WhatsApp*" -or $_ -like "*Edge*" -or $_ -like "*Chrome*" } | Out-File (Join-Path $PSScriptRoot "window_debug.txt")

@@ -12,11 +12,11 @@ docker compose up -d
 
 # 2. Start Backend
 Write-Host "Starting Backend API (Port 3001)..." -ForegroundColor Yellow
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$BackendDir'; npm run dev" -WindowStyle Normal
+Start-Process powershell -ArgumentList "-ExecutionPolicy", "Bypass", "-NoExit", "-Command", "cd '$BackendDir'; cmd /c npm run dev" -WindowStyle Normal
 
 # 3. Start Frontend
 Write-Host "Starting Frontend (Vite on Port 5173)..." -ForegroundColor Yellow
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$ProjectRoot'; npm run dev" -WindowStyle Normal
+Start-Process powershell -ArgumentList "-ExecutionPolicy", "Bypass", "-NoExit", "-Command", "cd '$ProjectRoot'; cmd /c npm run dev" -WindowStyle Normal
 
 Write-Host "`nWaiting for services to initialize..." -ForegroundColor Cyan
 Start-Sleep -Seconds 5

@@ -579,13 +579,15 @@ export const Settings: React.FC = () => {
                   placeholder="username"
                   disabled={!!editingUserId}
                 />
-                <Input
-                  label={t('auth.password')}
-                  value={userForm.password}
-                  onChange={e => setUserForm(f => ({ ...f, password: e.target.value }))}
-                  placeholder={editingUserId ? 'Leave blank to keep current' : 'Password'}
-                  type="password"
-                />
+                {(!editingUserId || user?.isSystemAdmin) && (
+                  <Input
+                    label={t('auth.password')}
+                    value={userForm.password}
+                    onChange={e => setUserForm(f => ({ ...f, password: e.target.value }))}
+                    placeholder={editingUserId ? 'Leave blank to keep current' : 'Password'}
+                    type="password"
+                  />
+                )}
                 <Input
                   label="Display Name"
                   value={userForm.displayName}

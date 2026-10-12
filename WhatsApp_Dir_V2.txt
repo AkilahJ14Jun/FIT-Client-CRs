@@ -1,0 +1,23 @@
+Post method URL : {{BASE_URL}}/v2/whatsapp-business/messages
+Raw json body :
+
+{
+  "to": "14155552671",
+  "phoneNoId": "{{PHONE_NUMBER_ID}}",
+  "type": "image",
+  "id": "MEDIA_ID_123",
+  "caption": "Image from media library"
+}
+
+Node.js - Native - Code Snippet
+
+curl --location 'your_panel_url_here/v2/whatsapp-business/messages' \
+--header 'Authorization: Bearer your_api_key_here' \
+--header 'Content-Type: application/json' \
+--data '{
+  "to": "14155552671",
+  "phoneNoId": "your_phone_number_id_here",
+  "type": "image",
+  "id": "MEDIA_ID_123",
+  "caption": "Image from media library"
+}'

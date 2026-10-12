@@ -12,7 +12,7 @@ import { Button }                from '../components/ui/Button';
 import { Badge }                 from '../components/ui/Badge';
 import { ReceiptPreviewModal }   from '../components/ui/ReceiptPreviewModal';
 import { WhatsAppSendModal }     from '../components/ui/WhatsAppSendModal';
-import { downloadReceiptAsPDF, isMobileDevice, shareMobile } from '../utils/customerReceipt';
+import { downloadReceiptAsPDF, isMobileDevice, shareMobile, receiptFilename } from '../utils/customerReceipt';
 import { downloadEntriesPDF, printEntries } from '../utils/entriesReport';
 import { format }                from 'date-fns';
 import { useTranslation } from '../i18n/TranslationProvider';
@@ -184,9 +184,14 @@ export const Entries: React.FC = () => {
       const shareMethod = settings?.whatsappShareMethod || 'Direct WhatsApp Share';
       
       if (shareMethod === 'Direct WhatsApp Share') {
+        const mobile = (customer.mobile || customer.alternateMobile || '').trim();
+        if (!mobile) {
+          showToast('Customer has no mobile number for WhatsApp sharing.', 'error');
+          return;
+        }
+
         const base64Image = await downloadReceiptAsPDF(e, customer, 'base64') as string;
-        const msg = e.billNumber;
-        const mobile = customer.mobile || customer.alternateMobile || '9999999999';
+        const fileName = receiptFilename(e, customer, settings?.billPrefix);
         
         const res = await fetch('/api/whatsapp/send-direct', {
           method: 'POST',
@@ -194,9 +199,8 @@ export const Entries: React.FC = () => {
           body: JSON.stringify({
             host: window.location.hostname,
             mobile,
-            msg,
             base64Image,
-            fileName: `Receipt_${e.billNumber}.jpg`
+            fileName
           })
         });
         

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Save, ArrowLeft, User, ExternalLink, Building2, Layers, Plus, Trash2 } from 'lucide-react';
+import { Save, ArrowLeft, User, ExternalLink, Building2, Layers, Plus, Trash2, Receipt, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { useTranslation } from '../i18n/TranslationProvider';
 import {
   CustomerDB, SourceDB, EntryDB,
@@ -12,7 +12,6 @@ import { Button }                  from '../components/ui/Button';
 import { Input, Select, TextArea } from '../components/ui/Input';
 import { Card }                    from '../components/ui/Card';
 import { ReceiptPreviewModal }     from '../components/ui/ReceiptPreviewModal';
-import { downloadReceiptAsPDF }   from '../utils/customerReceipt';
 
 // ── Entry Types ───────────────────────────────────────────────────────────────
 const ENTRY_TYPES = [
@@ -72,7 +71,7 @@ function newSourceRow(): OBSourceRow {
 export const Dispatch: React.FC = () => {
   const { t } = useTranslation();
   const navigate       = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const editId         = searchParams.get('edit');
 
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -164,11 +163,21 @@ export const Dispatch: React.FC = () => {
     });
   }, [editId, entryType]);
 
-  // ── Receipt preview ───────────────────────────────────────────────────────
+  // ── Receipt preview & save feedback ─────────────────────────────────────────
   const [saving,          setSaving]          = useState(false);
+  const [savingAction,    setSavingAction]    = useState<'save' | 'receipt' | null>(null);
+  const [savedEntryId,    setSavedEntryId]    = useState<string | null>(null);
+  const [toast,           setToast]           = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const [receiptOpen,     setReceiptOpen]     = useState(false);
   const [receiptEntry,    setReceiptEntry]    = useState<BoxEntry | null>(null);
   const [receiptCustomer, setReceiptCustomer] = useState<Customer | null>(null);
+
+  const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 4000);
+  };
+
+  const currentEntryId = editId || savedEntryId;
 
   // ── Live stock position (overall status, independent of form values) ──
   const [liveStock, setLiveStock] = useState<{
@@ -370,6 +379,7 @@ export const Dispatch: React.FC = () => {
   const handleSaveOB = async () => {
     if (!validateOB()) return;
     setSaving(true);
+    setSavingAction('save');
     try {
       const resolvedSources: OpeningStockSource[] = ob.sourceRows
         .map((r) => {
@@ -396,12 +406,14 @@ export const Dispatch: React.FC = () => {
       navigate('/entries');
     } finally {
       setSaving(false);
+      setSavingAction(null);
     }
   };
 
-  const handleSaveDispatch = async () => {
+  const handleSaveDispatch = async (openReceipt: boolean = true) => {
     if (!validateDispatch()) return;
     setSaving(true);
+    setSavingAction(openReceipt ? 'receipt' : 'save');
     try {
       const customer = customers.find((c) => c.id === form.customerId);
 
@@ -427,14 +439,15 @@ export const Dispatch: React.FC = () => {
         openingStockSources: extSourceRows.length > 0 ? extSourceRows : undefined,
       };
 
-      const savedEntry = editId
-        ? await EntryDB.update(editId, payload) as BoxEntry
+      const currentId = editId || savedEntryId;
+      const savedEntry = currentId
+        ? await EntryDB.update(currentId, payload) as BoxEntry
         : await EntryDB.create(payload);
 
       // Stock position is dynamically calculated from the DB, so no manual update is needed.
 
       // Persist the updated sent count to the backend
-      if (customer && savedEntry && !editId) {
+      if (customer && savedEntry && !currentId) {
         // CR6/CR FIX: Update the customer's LIVE balance (Sent - Returned)
         const newCount = Math.max(0, cumulativeSent + numCurrentQty - numReturned);
         await CustomerDB.update(customer.id, { totalSentCount: newCount });
@@ -444,20 +457,28 @@ export const Dispatch: React.FC = () => {
         ));
       }
 
-      if (customer && savedEntry) {
-        downloadReceiptAsPDF(savedEntry, customer);
-        setTimeout(() => { setReceiptEntry(savedEntry); setReceiptCustomer(customer); setReceiptOpen(true); }, 150);
+      if (!currentId && savedEntry) {
+        setSavedEntryId(savedEntry.id);
+        setSearchParams({ edit: savedEntry.id }, { replace: true });
+      }
+
+      await loadVarietyStock();
+
+      if (openReceipt && customer && savedEntry) {
+        setReceiptEntry(savedEntry);
+        setReceiptCustomer(customer);
+        setReceiptOpen(true);
       } else {
-        navigate('/entries');
+        showToast(t('dispatch.savedSuccess') || 'Entry saved successfully');
       }
     } finally {
       setSaving(false);
+      setSavingAction(null);
     }
   };
 
   const handleReceiptClose = () => {
     setReceiptOpen(false);
-    navigate('/entries');
   };
 
   const customerOpts = customers.map((c) => ({ value: c.id, label: `${c.customerName} – ${c.shopName}` }));
@@ -466,6 +487,19 @@ export const Dispatch: React.FC = () => {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <>
+      {toast && (
+        <div className={`fixed top-5 right-5 z-50 flex items-center gap-3 px-5 py-3.5 rounded-xl shadow-xl text-white text-sm font-medium transition-all duration-300 animate-fade-in ${toast.type === 'success' ? 'bg-emerald-600' : 'bg-red-600'}`}>
+          {toast.type === 'success' ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
+          <span>{toast.msg}</span>
+          <button
+            onClick={() => navigate('/entries')}
+            className="ml-2 underline text-xs font-semibold hover:opacity-80"
+          >
+            {t('nav.entries') || 'Go to Entries'} →
+          </button>
+        </div>
+      )}
+
       <div className="max-w-3xl mx-auto space-y-5">
 
         {/* Page header */}
@@ -474,7 +508,7 @@ export const Dispatch: React.FC = () => {
             {t('dispatch.back')}
           </Button>
           <h2 className="text-base font-semibold text-gray-700">
-            {editId ? t('dispatch.title_edit') : t('dispatch.title_new')}
+            {currentEntryId ? t('dispatch.title_edit') : t('dispatch.title_new')}
           </h2>
         </div>
 
@@ -1071,11 +1105,26 @@ export const Dispatch: React.FC = () => {
               <Button variant="secondary" onClick={() => navigate(-1)}>{t('dispatch.cancel')}</Button>
               <Button
                 icon={<Save size={16} />}
-                onClick={handleSave}
+                onClick={() => handleSaveDispatch(false)}
                 size="lg"
                 disabled={saving || (isReturn && form.customerId && cumulativeSent === 0)}
               >
-                {saving ? t('dispatch.saving') : editId ? t('dispatch.saveChanges') : t('dispatch.save')}
+                {saving && savingAction === 'save'
+                  ? t('dispatch.saving')
+                  : currentEntryId
+                  ? t('dispatch.saveOnlyChanges')
+                  : t('dispatch.saveOnly')}
+              </Button>
+              <Button
+                icon={<Receipt size={16} />}
+                onClick={() => handleSaveDispatch(true)}
+                size="lg"
+                disabled={saving || (isReturn && form.customerId && cumulativeSent === 0)}
+                className="bg-emerald-600 hover:bg-emerald-700"
+              >
+                {saving && savingAction === 'receipt'
+                  ? t('dispatch.generatingReceipt')
+                  : t('dispatch.generateReceipt')}
               </Button>
             </div>
           </>

@@ -10,6 +10,7 @@ import { Badge } from '../components/ui/Badge';
 import { StockAlertBanner } from '../components/ui/StockAlertBanner';
 import { format } from 'date-fns';
 import { useTranslation } from '../i18n/TranslationProvider';
+import { useAuth } from '../auth/AuthContext';
 
 const ENTRY_TYPE_BADGE: Record<string, 'blue' | 'green' | 'yellow' | 'orange' | 'purple'> = {
   dispatch: 'blue',
@@ -32,6 +33,8 @@ const EMPTY_STATS: DashboardStats = {
 
 export const Dashboard: React.FC = () => {
   const { t } = useTranslation();
+  const { user } = useAuth();
+  const isSystemAdmin = user?.isSystemAdmin === true || user?.username === 'System Admin';
   const [stats, setStats] = useState<DashboardStats>(EMPTY_STATS);
   const [loading, setLoading] = useState(true);
   const todayLabel = format(new Date(), 'EEEE, dd MMM yyyy');
@@ -142,30 +145,34 @@ export const Dashboard: React.FC = () => {
         </div>
       )}
 
-      {/* ── WHATSAPP STATS ── */}
-      <div className="flex items-center gap-2 px-1">
-        <MessageCircle size={15} className="text-green-600" />
-        <span className="text-sm font-semibold text-green-700">
-          WhatsApp Share Status
-        </span>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="rounded-2xl bg-green-50 text-green-900 p-4 shadow-sm border border-green-100 flex items-center justify-between">
-          <div>
-            <p className="text-xs opacity-80 mb-1">Total Successfully Sent</p>
-            <p className="text-3xl font-extrabold">{loading ? '…' : stats.whatsappStats.totalSent}</p>
-            <p className="text-sm font-bold text-amber-700 mt-1.5">Remaining Msg Count: {loading ? '…' : stats.whatsappStats.remainingMsgCount}</p>
+      {/* ── WHATSAPP STATS (Visible only to System Admin) ── */}
+      {isSystemAdmin && (
+        <>
+          <div className="flex items-center gap-2 px-1">
+            <MessageCircle size={15} className="text-green-600" />
+            <span className="text-sm font-semibold text-green-700">
+              WhatsApp Share Status
+            </span>
           </div>
-          <MessageCircle size={32} className="opacity-20 text-green-700" />
-        </div>
-        <div className="rounded-2xl bg-green-50 text-green-900 p-4 shadow-sm border border-green-100 flex items-center justify-between">
-          <div>
-            <p className="text-xs opacity-80 mb-1">Sent Today</p>
-            <p className="text-3xl font-extrabold">{loading ? '…' : stats.whatsappStats.todaySent}</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="rounded-2xl bg-green-50 text-green-900 p-4 shadow-sm border border-green-100 flex items-center justify-between">
+              <div>
+                <p className="text-xs opacity-80 mb-1">Total Successfully Sent</p>
+                <p className="text-3xl font-extrabold">{loading ? '…' : stats.whatsappStats.totalSent}</p>
+                <p className="text-sm font-bold text-amber-700 mt-1.5">Remaining Msg Count: {loading ? '…' : stats.whatsappStats.remainingMsgCount}</p>
+              </div>
+              <MessageCircle size={32} className="opacity-20 text-green-700" />
+            </div>
+            <div className="rounded-2xl bg-green-50 text-green-900 p-4 shadow-sm border border-green-100 flex items-center justify-between">
+              <div>
+                <p className="text-xs opacity-80 mb-1">Sent Today</p>
+                <p className="text-3xl font-extrabold">{loading ? '…' : stats.whatsappStats.todaySent}</p>
+              </div>
+              <Calendar size={32} className="opacity-20 text-green-700" />
+            </div>
           </div>
-          <Calendar size={32} className="opacity-20 text-green-700" />
-        </div>
-      </div>
+        </>
+      )}
 
       {/* ── QUICK LINKS ── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
