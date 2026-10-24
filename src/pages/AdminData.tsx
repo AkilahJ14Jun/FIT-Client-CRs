@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Plus, Pencil, Trash2, RotateCcw, Search, X,
   Users, Database, Package, MapPin, Settings as SettingsIcon,
@@ -38,7 +38,17 @@ const ENTRY_TYPE_BADGE: Record<string, 'blue' | 'yellow' | 'green' | 'orange' | 
 };
 
 export const AdminData: React.FC = () => {
-  const [tab, setTab] = useState<TabId>('customers');
+  const { user } = useAuth();
+  const isSystemAdmin = user?.isSystemAdmin === true || user?.username === 'System Admin';
+  const [searchParams] = useSearchParams();
+  const initialTab = isSystemAdmin ? ((searchParams.get('tab') as TabId) || 'customers') : 'operations';
+  const [tab, setTab] = useState<TabId>(initialTab);
+
+  useEffect(() => {
+    if (!isSystemAdmin && tab !== 'operations') {
+      setTab('operations');
+    }
+  }, [isSystemAdmin, tab]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [toast, setToast] = useState<string | null>(null);
@@ -76,7 +86,7 @@ export const AdminData: React.FC = () => {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const TABS: TabDef[] = [
+  const ALL_TABS: TabDef[] = [
     { id: 'customers', label: 'Customers', icon: <Users size={15} /> },
     { id: 'areas', label: 'Areas', icon: <MapPin size={15} /> },
     { id: 'sources', label: 'Varieties', icon: <Database size={15} /> },
@@ -85,13 +95,16 @@ export const AdminData: React.FC = () => {
     { id: 'operations', label: 'Operations', icon: <ShieldCheck size={15} /> },
   ];
 
+  const TABS = isSystemAdmin ? ALL_TABS : ALL_TABS.filter(t => t.id === 'operations');
+
   const itemsCount = {
     customers: customers.length, areas: areas.length,
-    sources: sources.length, entries: entries.length, settings: settings ? 1 : 0, operations: 2,
+    sources: sources.length, entries: entries.length, settings: settings ? 1 : 0, operations: isSystemAdmin ? 3 : 2,
   };
 
   // ── Row deletion ──
   const handleDelete = async (id: string) => {
+    if (!isSystemAdmin) return;
     try {
       if (tab === 'customers') await CustomerDB.delete(id);
       else if (tab === 'areas') await AreaDB.delete(id);
@@ -124,6 +137,7 @@ export const AdminData: React.FC = () => {
 
   // ── Open create / edit form ──
   const openForm = (item?: Record<string, unknown>) => {
+    if (!isSystemAdmin) return;
     if (item && item.id) {
       setEditingId(item.id as string);
       const r: Record<string, string | number | boolean> = {};
@@ -260,6 +274,7 @@ export const AdminData: React.FC = () => {
   };
 
   const handleFullClear = async () => {
+    if (!isSystemAdmin) return;
     setIsClearing(true);
     try {
       const res = await SystemDB.clearAll();
@@ -511,37 +526,39 @@ export const AdminData: React.FC = () => {
             <Button icon={<Download size={16} />} onClick={handleBackup}>Export Full Backup</Button>
           </div>
 
-          {/* Clear All Card */}
-          <div className="bg-red-50/50 rounded-2xl border border-red-100 p-6 space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-red-100 text-red-700 rounded-xl">
-                <AlertTriangle size={20} />
+          {/* Clear All Card (System Admin only) */}
+          {isSystemAdmin && (
+            <div className="bg-red-50/50 rounded-2xl border border-red-100 p-6 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-red-100 text-red-700 rounded-xl">
+                  <AlertTriangle size={20} />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-red-800">Clear Business Records</h3>
+                  <p className="text-xs text-red-500">Permanently delete all business data</p>
+                </div>
               </div>
-              <div>
-                <h3 className="font-semibold text-red-800">Clear Business Records</h3>
-                <p className="text-xs text-red-500">Permanently delete all business data</p>
+              <p className="text-sm text-gray-600">
+                This action will remove all **Customers, Varieties, Areas, and Entries**.
+                User accounts and system settings will remain unchanged.
+              </p>
+              <div className="space-y-3">
+                <Button 
+                  variant="danger" 
+                  icon={<Trash2 size={16} />} 
+                  onClick={() => setShowClearConfirm(true)}
+                  disabled={!backupExported}
+                >
+                  Clear All Data
+                </Button>
+                {!backupExported && (
+                  <p className="text-[10px] text-red-500 font-medium">
+                    * Please Export Full Backup first to enable this feature.
+                  </p>
+                )}
               </div>
             </div>
-            <p className="text-sm text-gray-600">
-              This action will remove all **Customers, Varieties, Areas, and Entries**.
-              User accounts and system settings will remain unchanged.
-            </p>
-            <div className="space-y-3">
-              <Button 
-                variant="danger" 
-                icon={<Trash2 size={16} />} 
-                onClick={() => setShowClearConfirm(true)}
-                disabled={!backupExported}
-              >
-                Clear All Data
-              </Button>
-              {!backupExported && (
-                <p className="text-[10px] text-red-500 font-medium">
-                  * Please Export Full Backup first to enable this feature.
-                </p>
-              )}
-            </div>
-          </div>
+          )}
 
           {/* Restore Card */}
           <div className="bg-emerald-50/50 rounded-2xl border border-emerald-100 p-6 space-y-4">
@@ -568,13 +585,15 @@ export const AdminData: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-amber-50 rounded-xl p-4 border border-amber-100 flex gap-3">
-          <AlertTriangle size={20} className="text-amber-600 shrink-0" />
-          <div className="text-xs text-amber-800">
-            <p className="font-semibold mb-1">Important Note:</p>
-            <p>Clearing data is irreversible. Please ensure you have taken a full backup before proceeding with a fresh start. This operation log will be recorded in the audit logs.</p>
+        {isSystemAdmin && (
+          <div className="bg-amber-50 rounded-xl p-4 border border-amber-100 flex gap-3">
+            <AlertTriangle size={20} className="text-amber-600 shrink-0" />
+            <div className="text-xs text-amber-800">
+              <p className="font-semibold mb-1">Important Note:</p>
+              <p>Clearing data is irreversible. Please ensure you have taken a full backup before proceeding with a fresh start. This operation log will be recorded in the audit logs.</p>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     );
   };
@@ -619,7 +638,7 @@ export const AdminData: React.FC = () => {
       {/* Data table / settings */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-4 flex-wrap">
-          {tab !== 'settings' && (
+          {tab !== 'settings' && tab !== 'operations' && (
             <div className="relative flex-1 max-w-xs">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input value={search} onChange={e => setSearch(e.target.value)} placeholder={`Search ${TAB_ITEMS[tab].plural.toLowerCase()}...`}
@@ -627,7 +646,7 @@ export const AdminData: React.FC = () => {
             </div>
           )}
           <div className="ml-auto flex gap-2">
-            {tab !== 'settings' && (
+            {tab !== 'settings' && tab !== 'operations' && (
               <Button icon={<Plus size={14} />} size="sm" onClick={() => openForm()}>
                 New {TAB_ITEMS[tab].singular}
               </Button>
@@ -640,7 +659,7 @@ export const AdminData: React.FC = () => {
           <div className="py-16 text-center text-gray-400 text-sm">Loading...</div>
         ) : tab === 'settings' ? (
           renderSettingsTab()
-        ) : tab === 'operations' ? (
+        ) : (!isSystemAdmin || tab === 'operations') ? (
           renderOperationsTab()
         ) : renderTable()}
       </div>
@@ -657,19 +676,20 @@ export const AdminData: React.FC = () => {
 const GuardedAdminData: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const hasAccess = !!user && (user.isSystemAdmin === true || user.isAdmin === true || user.username === 'Admin' || user.username === 'System Admin');
 
   useEffect(() => {
-    if (user && user.isSystemAdmin !== true) {
+    if (user && !hasAccess) {
       navigate('/settings', { replace: true });
     }
-  }, [user, navigate]);
+  }, [user, hasAccess, navigate]);
 
-  if (!user || user.isSystemAdmin !== true) {
+  if (!user || !hasAccess) {
     return (
       <div className="flex flex-col items-center justify-center py-20">
         <AlertTriangle size={48} className="text-red-300 mb-4" />
         <h2 className="text-lg font-semibold text-gray-800">Access Denied</h2>
-        <p className="text-sm text-gray-500 mt-1">Only System Admin can access this page.</p>
+        <p className="text-sm text-gray-500 mt-1">Only Administrators can access this page.</p>
       </div>
     );
   }

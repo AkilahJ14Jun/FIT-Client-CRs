@@ -41,7 +41,7 @@ export const TopBar: React.FC<TopBarProps> = ({ title, subtitle }) => {
           <div className="flex items-center gap-2">
             <span className="text-xs text-gray-600 font-medium hidden sm:block">{user.displayName}</span>
             <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-semibold">
-              {user.isSystemAdmin ? 'Admin' : user.isAdmin ? 'Manager' : 'User'}
+              {user.isSystemAdmin ? 'System Admin' : (user.isAdmin || user.username === 'Admin') ? 'Admin' : 'User'}
             </span>
           </div>
         )}

@@ -68,6 +68,23 @@ export interface WhatsAppPayload {
   fitshareUrl: string;
 }
 
+export interface CombinedReceiptData {
+  billNumber: string;
+  billDate: string;
+  previousBalanceBox: number;
+  todayDispatched: number;
+  totalBox: number;
+  todayReturned: number;
+  totalBalanceBox: number;
+  dispatchedVarieties: Array<{ name: string; qty: number }>;
+  returnedVarieties: Array<{ name: string; qty: number }>;
+  pendingVarieties: string[];
+  companyOwnQty: number;
+  driverName?: string;
+  vehicleNumber?: string;
+  description?: string;
+}
+
 // ─── Device detection ─────────────────────────────────────────────────────────
 
 export function isMobileDevice(): boolean {
@@ -305,33 +322,181 @@ export async function downloadReceiptAsPDF(
   }
 }
 
+
+export async function getCombinedReceiptData(
+  entry: BoxEntry,
+  customer: Customer
+): Promise<CombinedReceiptData> {
+  let allEntries: BoxEntry[] = [];
+  try {
+    allEntries = await CustomerDB.getEntries(customer.id);
+  } catch (err) {
+    console.error('Error fetching customer entries for combined receipt:', err);
+  }
+
+  // Ensure current entry is included in allEntries and has latest values
+  const existingIdx = allEntries.findIndex(
+    (e) => (entry.id && e.id === entry.id) || (entry.billNumber && e.billNumber === entry.billNumber)
+  );
+  if (existingIdx >= 0) {
+    allEntries[existingIdx] = { ...allEntries[existingIdx], ...entry };
+  } else {
+    allEntries.push(entry);
+  }
+
+  const normalizeDate = (d: string) => (d || '').trim().split('T')[0];
+  const targetDate = normalizeDate(entry.entryDate);
+
+  // Sort chronologically ascending
+  const sorted = [...allEntries].sort((a, b) => {
+    const dCmp = normalizeDate(a.entryDate).localeCompare(normalizeDate(b.entryDate));
+    if (dCmp !== 0) return dCmp;
+    return (a.createdAt ? new Date(a.createdAt).getTime() : 0) - (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+  });
+
+  const priorEntries = sorted.filter((e) => normalizeDate(e.entryDate) < targetDate);
+  const todayEntries = sorted.filter((e) => normalizeDate(e.entryDate) === targetDate);
+
+  // 1. Calculate previous balance and variety holdings strictly BEFORE targetDate
+  let previousBalanceBox = 0;
+  const priorVarietyTotals: Record<string, number> = {};
+
+  for (const e of priorEntries) {
+    if (e.entryType === 'dispatch' || e.entryType === 'opening_balance') {
+      const sent = e.currentQuantity || 0;
+      previousBalanceBox += sent;
+      if (e.openingStockSources && e.openingStockSources.length > 0) {
+        for (const s of e.openingStockSources) {
+          priorVarietyTotals[s.sourceId] = (priorVarietyTotals[s.sourceId] || 0) + s.quantity;
+        }
+      } else if (e.isExternalSource && e.sourceId) {
+        priorVarietyTotals[e.sourceId] = (priorVarietyTotals[e.sourceId] || 0) + (e.externalBoxCount || 0);
+      }
+    } else if (e.entryType === 'return') {
+      const ret = e.boxesReturned || 0;
+      previousBalanceBox -= ret;
+      if (e.openingStockSources && e.openingStockSources.length > 0) {
+        for (const s of e.openingStockSources) {
+          priorVarietyTotals[s.sourceId] = (priorVarietyTotals[s.sourceId] || 0) - s.quantity;
+        }
+      }
+    }
+  }
+  previousBalanceBox = Math.max(0, previousBalanceBox);
+  for (const k of Object.keys(priorVarietyTotals)) {
+    priorVarietyTotals[k] = Math.max(0, priorVarietyTotals[k]);
+  }
+
+  // 2. Aggregate today's dispatches and returns across all todayEntries
+  let todayDispatched = 0;
+  let todayReturned = 0;
+  let todayCompanyOwn = 0;
+
+  const dispatchedVarietyMap: Record<string, { name: string; qty: number }> = {};
+  const returnedVarietyMap: Record<string, { name: string; qty: number }> = {};
+
+  for (const e of todayEntries) {
+    if (e.entryType === 'dispatch' || (e.currentQuantity > 0 && e.entryType !== 'return')) {
+      todayDispatched += (e.currentQuantity || 0);
+      todayCompanyOwn += (e.companyOwnQuantity ?? e.currentQuantity ?? 0);
+
+      if (e.openingStockSources && e.openingStockSources.length > 0) {
+        for (const s of e.openingStockSources) {
+          if (!dispatchedVarietyMap[s.sourceId]) {
+            dispatchedVarietyMap[s.sourceId] = { name: s.sourceName, qty: 0 };
+          }
+          dispatchedVarietyMap[s.sourceId].qty += s.quantity;
+        }
+      } else if (e.isExternalSource && e.sourceName) {
+        const sId = e.sourceId || e.sourceName;
+        if (!dispatchedVarietyMap[sId]) {
+          dispatchedVarietyMap[sId] = { name: e.sourceName, qty: 0 };
+        }
+        dispatchedVarietyMap[sId].qty += (e.externalBoxCount || 0);
+      }
+    }
+
+    if (e.entryType === 'return' || e.boxesReturned > 0) {
+      todayReturned += (e.boxesReturned || 0);
+
+      if (e.openingStockSources && e.openingStockSources.length > 0) {
+        for (const s of e.openingStockSources) {
+          if (!returnedVarietyMap[s.sourceId]) {
+            returnedVarietyMap[s.sourceId] = { name: s.sourceName, qty: 0 };
+          }
+          returnedVarietyMap[s.sourceId].qty += s.quantity;
+        }
+      } else if (e.isExternalSource && e.sourceName) {
+        const sId = e.sourceId || e.sourceName;
+        if (!returnedVarietyMap[sId]) {
+          returnedVarietyMap[sId] = { name: e.sourceName, qty: 0 };
+        }
+        returnedVarietyMap[sId].qty += (e.boxesReturned || 0);
+      }
+    }
+  }
+
+  // 3. Totals
+  const totalBox = previousBalanceBox + todayDispatched;
+  const totalBalanceBox = Math.max(0, totalBox - todayReturned);
+
+  // 4. Net variety balance for pending calculation
+  const netVarietyTotals: Record<string, number> = { ...priorVarietyTotals };
+  for (const [sId, item] of Object.entries(dispatchedVarietyMap)) {
+    netVarietyTotals[sId] = (netVarietyTotals[sId] || 0) + item.qty;
+  }
+  for (const [sId, item] of Object.entries(returnedVarietyMap)) {
+    netVarietyTotals[sId] = (netVarietyTotals[sId] || 0) - item.qty;
+  }
+
+  let allSources: any[] = [];
+  try {
+    allSources = await SourceDB.getActive();
+  } catch (err) {
+    console.error('Failed to get active sources:', err);
+  }
+  const sourceNameMap = Object.fromEntries(allSources.map((s) => [s.id, s.sourceName]));
+
+  const pendingVarieties = Object.entries(netVarietyTotals)
+    .filter(([_, qty]) => (qty as number) > 0)
+    .map(([sId, qty]) => `${sourceNameMap[sId] || dispatchedVarietyMap[sId]?.name || returnedVarietyMap[sId]?.name || sId}: ${qty}`);
+
+  const dispatchedVarieties = Object.values(dispatchedVarietyMap).filter(v => v.qty > 0);
+  const returnedVarieties = Object.values(returnedVarietyMap).filter(v => v.qty > 0);
+
+  const billDate = format(new Date(entry.entryDate), 'dd-MM-yyyy');
+
+  const driverName = entry.driverName || todayEntries.find(e => e.driverName)?.driverName || '';
+  const vehicleNumber = entry.vehicleNumber || todayEntries.find(e => e.vehicleNumber)?.vehicleNumber || '';
+  const description = entry.description || todayEntries.map(e => e.description).filter(Boolean).join('; ');
+
+  return {
+    billNumber: entry.billNumber,
+    billDate,
+    previousBalanceBox,
+    todayDispatched,
+    totalBox,
+    todayReturned,
+    totalBalanceBox,
+    dispatchedVarieties,
+    returnedVarieties,
+    pendingVarieties,
+    companyOwnQty: todayCompanyOwn > 0 ? todayCompanyOwn : todayDispatched,
+    driverName,
+    vehicleNumber,
+    description,
+  };
+}
+
 async function renderReceiptContent(doc: jsPDF, startY: number, entry: BoxEntry, customer: Customer, settings: any) {
   const companyName = settings.companyName || 'MC & SONS FISH COMPANY';
   const companyAddress = settings.companyAddress || '';
   const traderName = settings.traderName || companyName;
 
-  const billDate = format(new Date(entry.entryDate), 'dd-MM-yyyy');
   const printedAt = format(new Date(), 'hh:mm:ss a');
 
-  // ── Box calculations ──────────────────────────────────────────────────────
-  const history = await CustomerDB.getHistorySummary(customer.id, entry.billNumber);
-  const previousBalanceBox = history.cumulativeBalance;
-  const todayFishBox = entry.currentQuantity; 
-  const totalBox = previousBalanceBox + todayFishBox;
-  const totalBalanceBox = Math.max(0, totalBox - entry.boxesReturned);
-  const pendingVarieties = await getPendingVarieties(entry, history);
-
-  // ── External sources for footer notes ─────────────────────────────────────
-  const externalSources: Array<{ name: string; qty: number }> = [];
-  if (entry.openingStockSources && entry.openingStockSources.length > 0) {
-    for (const src of entry.openingStockSources) {
-      externalSources.push({ name: src.sourceName, qty: src.quantity });
-    }
-  } else if (entry.isExternalSource && entry.sourceName) {
-    externalSources.push({ name: entry.sourceName, qty: entry.externalBoxCount ?? 0 });
-  }
-
-  const ownQty = entry.companyOwnQuantity ?? entry.currentQuantity;
+  // ── Combined Box calculations (combining dispatch and return related entries) ──
+  const data = await getCombinedReceiptData(entry, customer);
 
   const PW = 210;
   const ML = 14;
@@ -399,21 +564,21 @@ async function renderReceiptContent(doc: jsPDF, startY: number, entry: BoxEntry,
   doc.setFont('helvetica', 'bold');
   doc.text(`Bill No : ${entry.billNumber || '—'}`, PW - MR, y, { align: 'right' });
   doc.setFont('helvetica', 'normal');
-  doc.text(`Bill Date : ${billDate}`, PW - MR, y + 6, { align: 'right' });
+  doc.text(`Bill Date : ${data.billDate}`, PW - MR, y + 6, { align: 'right' });
 
   y += 12;
 
   // ─── MAIN TABLE ───────────────────────────────────────────────────────────
-  const returnedBoxesLabel = entry.boxesReturned > 0 && externalSources.length > 0 && entry.entryType === 'return'
-    ? `Boxes Returned\n(${externalSources.map((s) => `${s.name}: ${s.qty}`).join(', ')})`
+  const returnedBoxesLabel = data.todayReturned > 0 && data.returnedVarieties.length > 0
+    ? `Boxes Returned\n(${data.returnedVarieties.map((s) => `${s.name}: ${s.qty}`).join(', ')})`
     : 'Boxes Returned';
 
   const tableRows: [string, string][] = [
-    ['Previous Balance Box', String(previousBalanceBox)],
-    ["Today's Fish Box", String(todayFishBox)],
-    ['Total Box', String(totalBox)],
-    [returnedBoxesLabel, entry.boxesReturned > 0 ? String(entry.boxesReturned) : ''], 
-    ['Total Balance Box', String(totalBalanceBox)],
+    ['Previous Balance Box', String(data.previousBalanceBox)],
+    ["Today's Fish Box", String(data.todayDispatched)],
+    ['Total Box', String(data.totalBox)],
+    [returnedBoxesLabel, data.todayReturned > 0 ? String(data.todayReturned) : ''], 
+    ['Total Balance Box', String(data.totalBalanceBox)],
   ];
 
   autoTable(doc, {
@@ -440,28 +605,21 @@ async function renderReceiptContent(doc: jsPDF, startY: number, entry: BoxEntry,
   // ─── NOTES ────────────────────────────────────────────────────────────────
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  const noteText = `NOTE : AS & Bros Box-${ownQty}`;
-  if (entry.entryType === 'dispatch') {
-    doc.text(noteText, ML, y);
-    if (externalSources.length > 0) {
-      const varietyBracket = `(${externalSources.map((s) => `${s.name}: ${s.qty}`).join(', ')})`;
-      doc.text(varietyBracket, ML, y + 4);
-      y += 9.5;
-    } else {
-      y += 6;
-    }
-  } else if (entry.entryType === 'return') {
-    doc.text(noteText, ML, y);
-    let currentY = y + 4;
-    if (pendingVarieties.length > 0) {
-      doc.text(`Pending: (${pendingVarieties.join(', ')})`, ML, currentY);
-      currentY += 4;
-    }
-    y = currentY + 2;
-  } else {
-    doc.text(noteText, ML, y);
-    y += 6;
+  const noteText = `NOTE : AS & Bros Box-${data.companyOwnQty}`;
+  doc.text(noteText, ML, y);
+  let currentY = y + 4;
+
+  if (data.dispatchedVarieties.length > 0) {
+    const varietyBracket = `(${data.dispatchedVarieties.map((s) => `${s.name}: ${s.qty}`).join(', ')})`;
+    doc.text(varietyBracket, ML, currentY);
+    currentY += 4;
   }
+
+  if (data.pendingVarieties.length > 0) {
+    doc.text(`Pending: (${data.pendingVarieties.join(', ')})`, ML, currentY);
+    currentY += 4;
+  }
+  y = currentY + 2;
 
   // ─── FOOTER ───────────────────────────────────────────────────────────────
   doc.setFont('helvetica', 'bold');
@@ -495,63 +653,48 @@ export async function buildWhatsAppPayload(
   customer: Customer,
   overridePhone?: string,
 ): Promise<WhatsAppPayload> {
-  const billDate = format(new Date(entry.entryDate), 'dd-MM-yyyy');
-
-  // Dynamic history for payload (matching Dispatch UI logic)
-  const [history, settings] = await Promise.all([
-    CustomerDB.getHistorySummary(customer.id, entry.billNumber),
+  const [data, settings] = await Promise.all([
+    getCombinedReceiptData(entry, customer),
     SettingsDB.get(),
   ]);
   if (settings && typeof settings.billPrefix === 'string') {
     cachedBillPrefix = settings.billPrefix;
   }
-  const previousBalanceBox = history.cumulativeBalance;
-  const todayFishBox = entry.currentQuantity;
-  const totalBox = previousBalanceBox + todayFishBox;
-  const totalBalanceBox = Math.max(0, totalBox - entry.boxesReturned);
-  const pendingVarieties = await getPendingVarieties(entry, history);
-
-  const ownQty = entry.companyOwnQuantity ?? entry.currentQuantity;
-
-  const externalSources: Array<{ name: string; qty: number }> = [];
-  if (entry.openingStockSources && entry.openingStockSources.length > 0) {
-    for (const src of entry.openingStockSources)
-      externalSources.push({ name: src.sourceName, qty: src.quantity });
-  } else if (entry.isExternalSource && entry.sourceName) {
-    externalSources.push({ name: entry.sourceName, qty: entry.externalBoxCount ?? 0 });
-  }
 
   const noteLines = [
-    `AS & Bros Box-${ownQty}`,
+    `AS & Bros Box-${data.companyOwnQty}`,
   ];
-  if (entry.entryType === 'dispatch' && externalSources.length > 0) {
-    noteLines.push(`(${externalSources.map((s) => `${s.name}: ${s.qty}`).join(', ')})`);
-  } else if (entry.entryType === 'return') {
-    if (pendingVarieties.length > 0) {
-      noteLines.push(`Pending: (${pendingVarieties.join(', ')})`);
-    }
+  if (data.dispatchedVarieties.length > 0) {
+    noteLines.push(`(${data.dispatchedVarieties.map((s) => `${s.name}: ${s.qty}`).join(', ')})`);
   }
+  if (data.pendingVarieties.length > 0) {
+    noteLines.push(`Pending: (${data.pendingVarieties.join(', ')})`);
+  }
+
+  const returnedVarietyText = data.todayReturned > 0 && data.returnedVarieties.length > 0
+    ? `\n   (${data.returnedVarieties.map((s) => `${s.name}: ${s.qty}`).join(', ')})`
+    : '';
 
   const lines = [
     `🐟 *FIT – Fish Inventory Tracking*`,
     ``,
-    `🧾 *Bill No:* ${entry.billNumber} 📅 *Date:* ${billDate}`,
+    `🧾 *Bill No:* ${entry.billNumber} 📅 *Date:* ${data.billDate}`,
     `👤 *Name:* ${customer.customerName}`,
     `🏪 *Shop:* ${customer.shopName || '—'}`,
     ``,
     `━━━━━━━━━━━━━━━━━━━━━━━`,
-    `📦 Previous Balance Box : *${previousBalanceBox}*`,
-    `📤 Today's Fish Box     : *${todayFishBox}*`,
-    `📊 Total Box            : *${totalBox}*`,
-    `↩️ Boxes Returned       : *${entry.boxesReturned}*` + (entry.boxesReturned > 0 && externalSources.length > 0 && entry.entryType === 'return' ? `\n   (${externalSources.map((s) => `${s.name}: ${s.qty}`).join(', ')})` : ''),
-    `⚖️ Total Balance Box    : *${totalBalanceBox}*`,
+    `📦 Previous Balance Box : *${data.previousBalanceBox}*`,
+    `📤 Today's Fish Box     : *${data.todayDispatched}*`,
+    `📊 Total Box            : *${data.totalBox}*`,
+    `↩️ Boxes Returned       : *${data.todayReturned}*${returnedVarietyText}`,
+    `⚖️ Total Balance Box    : *${data.totalBalanceBox}*`,
     `━━━━━━━━━━━━━━━━━━━━━━━`,
     ``,
     `NOTE : ${noteLines.join('\n ')}`,
     ``,
-    totalBalanceBox === 0
+    data.totalBalanceBox === 0
       ? `✅ All boxes returned. Thank you!`
-      : `⚠️ *${totalBalanceBox} box${totalBalanceBox !== 1 ? 'es' : ''} pending return.*`,
+      : `⚠️ *${data.totalBalanceBox} box${data.totalBalanceBox !== 1 ? 'es' : ''} pending return.*`,
     ``,
     `_Thank you for your business!_`,
   ];
@@ -574,17 +717,6 @@ export async function buildWhatsAppPayload(
     ? `https://web.whatsapp.com/send?phone=${e164Digits}&text=${encoded}`
     : `https://web.whatsapp.com/send?text=${encoded}`;
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // ★ CR FIX — Generate the fitshare:// protocol URL ★
-  //
-  // The fitshare:// URL carries both the phone number and the PDF filename
-  // so the Windows PowerShell handler can:
-  //   1. Locate the downloaded PDF in ~/Downloads/<pdfFilename>
-  //   2. Find the correct WhatsApp contact by phone number
-  //   3. Attach and send the exact same PDF as "Download PDF" produces
-  //
-  // URL Format: fitshare://send?phone=<encoded_phone>&file=<encoded_filename>
-  // ──────────────────────────────────────────────────────────────────────────
   const pdfFilename = receiptFilename(entry, customer, settings?.billPrefix);
   const fitshareUrl = `fitshare://send?phone=${encodeURIComponent(phonePlus)}&file=${encodeURIComponent(pdfFilename)}`;
 
@@ -594,7 +726,7 @@ export async function buildWhatsAppPayload(
     waMe,
     messageText,
     pdfFilename,
-    fitshareUrl, // ★ NEW FIELD
+    fitshareUrl,
     altPhone: altPhonePlus,
   };
 }

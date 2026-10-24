@@ -1,0 +1,3 @@
+Go through the contents of 'graphify-out' folder to understand this application code. 
+Currently there is a customer receipt being generated for each dispatch and return being made separately on the 'dispatch' page. Now when the receipt is being generated need it to combine both the dispatch and return related entries as a single receipt.
+All boxes dispatched and returned by the customer should reflect in one receipt now.

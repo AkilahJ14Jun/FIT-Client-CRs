@@ -240,6 +240,9 @@ export const CustomerDB = {
   async deleteAllEntries(): Promise<{ success: boolean; deletedCount?: number }> {
     return apiFetch('/entries/delete-all', { method: 'POST' });
   },
+  async getEntries(customerId: string): Promise<BoxEntry[]> {
+    return apiFetch<BoxEntry[]>(`/entries/customer/${customerId}?t=${Date.now()}`);
+  },
   /** Calculates cumulative balance and variety-level totals for a customer.
    *  Optionally excludes a specific bill (useful for 'Already Sent' calculation in Edit mode).
    */

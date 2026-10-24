@@ -7,8 +7,14 @@
 #  Features:
 #  - Zero source code dependency (no src/, server/src/, node_modules)
 #  - Only compiled artifacts and deployment runtime scripts
-#  - Safe for overwriting E:\FIT (server\.env is preserved via .env.template)
+#  - Safe for overwriting E:\FIT (server\.env is preserved)
+#  - Optional -DeployTo parameter to directly update production
 # ============================================================
+
+param(
+    [string]$DeployTo = "",
+    [switch]$SkipBuild
+)
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -23,23 +29,27 @@ function Log-OK($msg)    { Write-Host "   OK  $msg" -ForegroundColor Green }
 function Log-Warn($msg)  { Write-Host "   !!  $msg" -ForegroundColor Yellow }
 
 # 1. Verify and build frontend & backend
-Log-Task "BUILDING PRODUCTION ARTIFACTS"
+if (-not $SkipBuild) {
+    Log-Task "BUILDING PRODUCTION ARTIFACTS"
 
-Log-Step "Building Frontend (npm run build)..."
-Set-Location $ProjectRoot
-npm run build
-if ($LASTEXITCODE -ne 0) { Write-Error "Frontend build failed"; exit 1 }
-Log-OK "Frontend build complete (dist/)"
+    Log-Step "Building Frontend (npm run build)..."
+    Set-Location $ProjectRoot
+    npm run build
+    if ($LASTEXITCODE -ne 0) { Write-Error "Frontend build failed"; exit 1 }
+    Log-OK "Frontend build complete (dist/)"
 
-Log-Step "Building Backend (server/dist)..."
-Set-Location (Join-Path $ProjectRoot "server")
-npm run build
-if ($LASTEXITCODE -ne 0) { Write-Error "Backend build failed"; exit 1 }
-Set-Location $ProjectRoot
-Log-OK "Backend build complete (server/dist/)"
+    Log-Step "Building Backend (server/dist)..."
+    Set-Location (Join-Path $ProjectRoot "server")
+    npm run build
+    if ($LASTEXITCODE -ne 0) { Write-Error "Backend build failed"; exit 1 }
+    Set-Location $ProjectRoot
+    Log-OK "Backend build complete (server/dist/)"
+} else {
+    Log-Task "SKIPPING BUILD (USING EXISTING ARTIFACTS)"
+}
 
 # 2. Prepare clean deployable output folder
-Log-Task "CREATING CLEAN DEPLOYABLE FOLDER"
+Log-Task "CREATING CLEAN DEPLOYABLE FOLDER ($DeployDir)"
 if (Test-Path $DeployDir) {
     Remove-Item $DeployDir -Recurse -Force
 }
@@ -75,8 +85,12 @@ DB_PORT=3308
 DB_USER=fit_user
 DB_PASSWORD=fit_password
 DB_NAME=fit_db
-WHATSAPP_API_KEY=f530452e37d14cd6954209f690a8c5f1
-WHATSAPP_API_HOST=apiwhatsapp.lionsms.com
+WHATSAPP_API_KEY=631d9a023ac72df2c5e210aa75e049a0b328d7b51497eb8926275900a3f7c750
+WHATSAPP_API_HOST=https://waapi.automationclub.in/api/v2/whatsapp-business/messages
+WHATSAPP_PHONE_ID=1235162486347376
+WHATSAPP_USERNAME=asbrothers75300@gmail.com
+WHATSAPP_PASSWORD=Asbrothers@123
+WHATSAPP_WEBSITE=https://waapi.automationclub.in
 Max Msg Count=5000
 Remaining Msg Count=5000
 Total Msg Sent=0
@@ -140,10 +154,18 @@ echo =========================================================
 echo.
 
 echo [1/4] Starting MySQL Database (Docker)...
-docker compose -f "%APP_ROOT%\docker-compose.yml" up -d
-if %ERRORLEVEL% NEQ 0 (
-    echo   ERROR: Docker failed. Is Docker Desktop running?
-    pause & exit /b 1
+docker inspect -f "{{.State.Running}}" fit_mysql_db 2>nul | findstr "true" >nul
+if %ERRORLEVEL% EQU 0 (
+    echo       MySQL container is already running.
+) else (
+    docker start fit_mysql_db 2>nul
+    if %ERRORLEVEL% NEQ 0 (
+        docker compose -f "%APP_ROOT%\docker-compose.yml" up -d
+        if %ERRORLEVEL% NEQ 0 (
+            echo   ERROR: Docker failed. Is Docker Desktop running?
+            pause & exit /b 1
+        )
+    )
 )
 echo       Done.
 echo.
@@ -160,7 +182,7 @@ echo.
 
 echo [3/4] Checking backend dependencies...
 if not exist "%SERVER_DIR%\node_modules\express\" (
-    echo       Installing dependencies (first run only)...
+    echo       Installing dependencies - first run or update...
     if exist "%SERVER_DIR%\node_modules\" rmdir /s /q "%SERVER_DIR%\node_modules"
     pushd "%SERVER_DIR%"
     call npm install --omit=dev
@@ -176,13 +198,18 @@ if not exist "%SERVER_DIR%\node_modules\express\" (
 echo.
 
 echo [4/4] Starting FIT Backend (port 3001)...
+REM Stop existing node on 3001 if already running
+for /f "tokens=5" %%a in (''netstat -aon ^| findstr :3001 ^| findstr LISTENING'') do (
+    echo       Stopping existing process on port 3001 PID %%a...
+    taskkill /F /PID %%a >nul 2>&1
+)
 pushd "%SERVER_DIR%"
-start /b node dist\index.js
+start "FIT Backend" /b node dist\index.js
 popd
 echo       Backend started.
 echo.
 
-echo Waiting for server to initialize (5 seconds)...
+echo Waiting for server to initialize 5 seconds...
 timeout /t 5 /nobreak >nul
 
 echo Opening FIT in browser...
@@ -192,7 +219,7 @@ echo.
 echo =========================================================
 echo   FIT is running at http://localhost:3001
 echo   Close this window to stop monitoring.
-echo   (The server continues running in the background)
+echo   Server continues running in the background.
 echo =========================================================
 echo.
 pause'
@@ -222,11 +249,83 @@ Compress-Archive -Path "$DeployDir\*" -DestinationPath $ZipPath -CompressionLeve
 $sizeMB = [math]::Round((Get-Item $ZipPath).Length / 1MB, 2)
 Log-OK "Zip archive generated: $ZipPath ($sizeMB MB)"
 
-# 11. Summary
+# 11. Optional Deployment to Target (e.g. E:\FIT)
+if ($DeployTo) {
+    Log-Task "DEPLOYING DIRECTLY TO TARGET LOCATION: $DeployTo"
+    if (-not (Test-Path $DeployTo)) {
+        New-Item -ItemType Directory -Path $DeployTo -Force | Out-Null
+    }
+
+    # Stop running process on port 3001 if active to release file locks
+    $netstat = netstat -aon | Select-String ":3001.*LISTENING"
+    if ($netstat) {
+        $pidToKill = ($netstat.ToString().Trim() -split '\s+')[-1]
+        Log-Step "Stopping running server on port 3001 (PID $pidToKill) to release file locks..."
+        Stop-Process -Id $pidToKill -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 2
+    }
+
+    # Copy files preserving existing server\.env
+    $targetEnv = Join-Path $DeployTo "server\.env"
+    $hasExistingEnv = Test-Path $targetEnv
+    $tempEnv = $null
+
+    if ($hasExistingEnv) {
+        Log-Step "Preserving existing production .env file..."
+        $tempEnv = [System.IO.Path]::GetTempFileName()
+        Copy-Item -Path $targetEnv -Destination $tempEnv -Force
+    }
+
+    Log-Step "Copying deployable files to $DeployTo..."
+    Copy-Item -Path "$DeployDir\*" -Destination $DeployTo -Recurse -Force
+
+    if ($hasExistingEnv -and (Test-Path $tempEnv)) {
+        Copy-Item -Path $tempEnv -Destination $targetEnv -Force
+        Remove-Item $tempEnv -Force -ErrorAction SilentlyContinue
+        Log-OK "Production .env file safely restored."
+    } elseif (-not (Test-Path $targetEnv)) {
+        # First time deploy: copy current root server/.env or template
+        $sourceEnv = Join-Path $ProjectRoot "server\.env"
+        if (Test-Path $sourceEnv) {
+            Copy-Item -Path $sourceEnv -Destination $targetEnv -Force
+            Log-OK "Initialized server\.env from project server\.env"
+        } else {
+            Copy-Item -Path (Join-Path $DeployTo "server\.env.template") -Destination $targetEnv -Force
+            Log-OK "Initialized server\.env from template"
+        }
+    }
+
+    # Verify zero source in target
+    if ((Test-Path "$DeployTo\src") -or (Test-Path "$DeployTo\server\src")) {
+        Write-Error "Deployment target $DeployTo contains source directories!"
+        exit 1
+    }
+    Log-OK "Verified target $DeployTo has NO source code dependencies"
+
+    # Install backend dependencies if not present
+    if (-not (Test-Path "$DeployTo\server\node_modules\express")) {
+        Log-Step "Installing backend production dependencies in $DeployTo\server..."
+        Push-Location "$DeployTo\server"
+        npm install --omit=dev
+        Pop-Location
+        Log-OK "Backend production dependencies installed"
+    } else {
+        Log-OK "Backend production dependencies already present"
+    }
+
+    Log-OK "Target $DeployTo successfully updated!"
+}
+
+# 12. Summary
 Log-Task "DEPLOYABLE SET GENERATION COMPLETE"
 Write-Host "Folder  : $DeployDir" -ForegroundColor White
 Write-Host "Zip File: $ZipPath ($sizeMB MB)" -ForegroundColor White
-Write-Host "`nTo update production:" -ForegroundColor Yellow
-Write-Host "1. Overwrite contents of 'E:\FIT' with contents of 'FIT_Deploy_Set'." -ForegroundColor Yellow
-Write-Host "2. Run 'E:\FIT\FIT_Start_Production.bat' (or 'pm2 restart fit-backend')." -ForegroundColor Yellow
+if ($DeployTo) {
+    Write-Host "Deployed: $DeployTo" -ForegroundColor Green
+}
+Write-Host "`nTo update production at any time:" -ForegroundColor Yellow
+Write-Host "Option 1: Overwrite contents of 'E:\FIT' with contents of '$DeployDir'." -ForegroundColor Yellow
+Write-Host "Option 2: Run '.\update-production.bat' or '.\scripts\CreateDeploymentSet.ps1 -DeployTo E:\FIT'." -ForegroundColor Yellow
+Write-Host "Then run 'E:\FIT\FIT_Start_Production.bat'." -ForegroundColor Yellow
 Set-Location $ProjectRoot
+

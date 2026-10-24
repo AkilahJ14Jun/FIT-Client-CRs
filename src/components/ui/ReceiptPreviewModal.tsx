@@ -32,6 +32,8 @@ import {
   isMobileDevice,
   shareMobile,
   receiptFilename,
+  getCombinedReceiptData,
+  type CombinedReceiptData,
 } from '../../utils/customerReceipt';
 import { WhatsAppSendModal } from './WhatsAppSendModal';
 import { format } from 'date-fns';
@@ -63,18 +65,22 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
   const isMobile = isMobileDevice();
 
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [combinedData, setCombinedData] = useState<CombinedReceiptData | null>(null);
 
   // Reset state whenever a new entry arrives
   useEffect(() => {
-    if (open) { 
+    if (open && entry && customer) { 
       setPrinted(false); 
       setShowWAModal(false); 
       setSharing(false);
       setShareSuccess(false);
       setShareError(null);
       SettingsDB.get().then(setSettings);
+      getCombinedReceiptData(entry, customer)
+        .then(setCombinedData)
+        .catch(console.error);
     }
-  }, [open, entry?.id]);
+  }, [open, entry?.id, customer?.id]);
 
   // Close on Escape
   useEffect(() => {
@@ -85,11 +91,23 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
 
   if (!open || !entry || !customer) return null;
 
-  const meta = ENTRY_TYPE_META[entry.entryType] ?? {
-    label: entry.entryType, colour: 'text-gray-700', bg: 'bg-gray-100',
-  };
+  const isCombined = combinedData && combinedData.todayDispatched > 0 && combinedData.todayReturned > 0;
+  const meta = isCombined
+    ? { label: 'BOX DISPATCH & RETURN', colour: 'text-indigo-800', bg: 'bg-indigo-100' }
+    : (combinedData && combinedData.todayDispatched > 0)
+    ? { label: 'BOX DISPATCH', colour: 'text-blue-800', bg: 'bg-blue-100' }
+    : (combinedData && combinedData.todayReturned > 0)
+    ? { label: 'BOX RETURN', colour: 'text-green-800', bg: 'bg-green-100' }
+    : (ENTRY_TYPE_META[entry.entryType] ?? {
+        label: entry.entryType, colour: 'text-gray-700', bg: 'bg-gray-100',
+      });
+
   const date = format(new Date(entry.entryDate), 'dd MMM yyyy');
-  const totalBoxes = entry.totalBoxesSent + entry.currentQuantity;
+  const prevBal = combinedData ? combinedData.previousBalanceBox : entry.totalBoxesSent;
+  const sentQty = combinedData ? combinedData.todayDispatched : entry.currentQuantity;
+  const totalBoxes = combinedData ? combinedData.totalBox : (entry.totalBoxesSent + entry.currentQuantity);
+  const retBoxes = combinedData ? combinedData.todayReturned : entry.boxesReturned;
+  const balBoxes = combinedData ? combinedData.totalBalanceBox : entry.balanceBoxes;
   const shareMethod = settings?.whatsappShareMethod || 'Direct WhatsApp Share';
 
   const handlePrint = () => {
@@ -275,7 +293,7 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
                   <Hash size={13} className="text-gray-400" />
                   Boxes Already Sent (Before This Entry)
                 </span>
-                <span className="text-sm text-gray-700 font-semibold">{entry.totalBoxesSent}</span>
+                <span className="text-sm text-gray-700 font-semibold">{prevBal}</span>
               </div>
 
               <div className="flex items-center justify-between px-4 py-2.5 bg-white">
@@ -283,7 +301,7 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
                   <ArrowUpRight size={13} className="text-blue-500" />
                   Current Qty Sent (This Entry)
                 </span>
-                <span className="text-sm text-blue-700 font-semibold">{entry.currentQuantity}</span>
+                <span className="text-sm text-blue-700 font-semibold">{sentQty}</span>
               </div>
 
               <div className="flex items-center justify-between px-4 py-3 bg-blue-900">
@@ -299,11 +317,11 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
                   <ArrowDownLeft size={13} className="text-green-500" />
                   Boxes Returned by Customer
                 </span>
-                <span className="text-sm text-green-700 font-semibold">{entry.boxesReturned}</span>
+                <span className="text-sm text-green-700 font-semibold">{retBoxes}</span>
               </div>
 
               <div className={`flex items-center justify-between px-4 py-3 ${
-                entry.balanceBoxes > 0 ? 'bg-amber-50' : 'bg-green-50'
+                balBoxes > 0 ? 'bg-amber-50' : 'bg-green-50'
               }`}>
                 <span className="flex items-center gap-2 text-sm font-semibold text-gray-700">
                   <Scale size={13} className={entry.balanceBoxes > 0 ? 'text-amber-500' : 'text-green-500'} />
@@ -312,26 +330,51 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
                 <span className={`text-lg font-extrabold ${
                   entry.balanceBoxes > 0 ? 'text-amber-700' : 'text-green-700'
                 }`}>
-                  {entry.balanceBoxes}
+                  {balBoxes}
                 </span>
               </div>
             </div>
           </div>
 
-          {/* External source */}
-          {entry.isExternalSource && entry.sourceName && (
-            <div className="rounded-xl border border-red-100 bg-red-50/50 px-4 py-3 text-sm">
-              <p className="text-xs font-bold text-red-700 uppercase tracking-wide mb-1.5">
-                External Source
+          {/* Dispatched Varieties */}
+          {combinedData && combinedData.dispatchedVarieties.length > 0 && (
+            <div className="rounded-xl border border-blue-100 bg-blue-50/50 px-4 py-3 text-sm">
+              <p className="text-xs font-bold text-blue-700 uppercase tracking-wide mb-1.5">
+                Dispatched Varieties
               </p>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Source Name:</span>
-                <span className="font-semibold text-red-800">{entry.sourceName}</span>
-              </div>
-              <div className="flex justify-between mt-1">
-                <span className="text-gray-600">Boxes from Source:</span>
-                <span className="font-semibold text-red-800">{entry.externalBoxCount ?? 0}</span>
-              </div>
+              {combinedData.dispatchedVarieties.map((v, i) => (
+                <div key={i} className="flex justify-between py-0.5">
+                  <span className="text-gray-600">{v.name}:</span>
+                  <span className="font-semibold text-blue-800">{v.qty} boxes</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Returned Varieties */}
+          {combinedData && combinedData.returnedVarieties.length > 0 && (
+            <div className="rounded-xl border border-green-100 bg-green-50/50 px-4 py-3 text-sm">
+              <p className="text-xs font-bold text-green-700 uppercase tracking-wide mb-1.5">
+                Returned Varieties
+              </p>
+              {combinedData.returnedVarieties.map((v, i) => (
+                <div key={i} className="flex justify-between py-0.5">
+                  <span className="text-gray-600">{v.name}:</span>
+                  <span className="font-semibold text-green-800">{v.qty} boxes</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Pending Varieties */}
+          {combinedData && combinedData.pendingVarieties.length > 0 && (
+            <div className="rounded-xl border border-amber-100 bg-amber-50/50 px-4 py-3 text-sm">
+              <p className="text-xs font-bold text-amber-700 uppercase tracking-wide mb-1.5">
+                Pending Varieties With Customer
+              </p>
+              <p className="text-sm font-semibold text-amber-800">
+                {combinedData.pendingVarieties.join(', ')}
+              </p>
             </div>
           )}
 
@@ -360,7 +403,7 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
 
           {/* Balance status banner */}
           <div className={`rounded-xl px-4 py-3 flex items-center gap-3 ${
-            entry.balanceBoxes === 0
+            balBoxes === 0
               ? 'bg-green-50 border border-green-200'
               : 'bg-amber-50 border border-amber-200'
           }`}>
@@ -375,7 +418,7 @@ export const ReceiptPreviewModal: React.FC<Props> = ({
               <>
                 <Scale size={18} className="text-amber-600 shrink-0" />
                 <p className="text-amber-800 text-sm font-medium">
-                  {entry.balanceBoxes} box{entry.balanceBoxes !== 1 ? 'es' : ''} pending
+                  {balBoxes} box{balBoxes !== 1 ? 'es' : ''} pending
                   return from {customer.customerName}.
                 </p>
               </>

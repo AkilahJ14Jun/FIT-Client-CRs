@@ -34,11 +34,12 @@ const GROUP_KEYS = [
 export const Sidebar: React.FC = () => {
   const { t } = useTranslation();
   const { user } = useAuth();
-  const isSystemAdmin = user?.isSystemAdmin === true;
+  const isSystemAdmin = user?.isSystemAdmin === true || user?.username === 'System Admin';
+  const isAdmin = user?.isAdmin === true || user?.username === 'Admin' || isSystemAdmin;
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const navItems = NAV_KEYS_BASE.filter(n => !n.adminOnly || isSystemAdmin);
+  const navItems = NAV_KEYS_BASE.filter(n => !n.adminOnly || isAdmin);
 
   return (
     <>

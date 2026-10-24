@@ -60,10 +60,10 @@
     "semantic_hash": "43a0f6a2bcd8c8df0198d77bd29e0b60"
   },
   "scripts/CreateDeploymentSet.ps1": {
-    "mtime": 1785038278.0824702,
-    "seen": 1788235617.6887705,
-    "ast_hash": "a9cfb2111ff3c34d3d73cf1c6b3aff4a",
-    "semantic_hash": "a9cfb2111ff3c34d3d73cf1c6b3aff4a"
+    "mtime": 1792643532.4776983,
+    "seen": 1792646930.9300008,
+    "ast_hash": "6218311483f63309d077f9a93cf651d9",
+    "semantic_hash": "6218311483f63309d077f9a93cf651d9"
   },
   "scripts/FITShareFinal.ps1": {
     "mtime": 1785038278.0824702,
@@ -102,10 +102,10 @@
     "semantic_hash": "405bca7a8535e9efb98040364822df83"
   },
   "scripts/debug_windows.ps1": {
-    "mtime": 1785038278.0824702,
-    "seen": 1788235617.6887872,
-    "ast_hash": "c6182727cbe40ba3b889470f2dcba41a",
-    "semantic_hash": "c6182727cbe40ba3b889470f2dcba41a"
+    "mtime": 1791613504.0433323,
+    "seen": 1792646930.930058,
+    "ast_hash": "904657af2f433b9b139a04f29af64efc",
+    "semantic_hash": "904657af2f433b9b139a04f29af64efc"
   },
   "server/package.json": {
     "mtime": 1785038278.0824702,
@@ -162,10 +162,10 @@
     "semantic_hash": "ec6cfaa5ffe5eba78d2d51573487622d"
   },
   "server/src/index.ts": {
-    "mtime": 1791551674.6568918,
-    "seen": 1791607916.2411413,
-    "ast_hash": "c615239e3d18b7a40a54b25784775a46",
-    "semantic_hash": "c615239e3d18b7a40a54b25784775a46"
+    "mtime": 1791612855.334364,
+    "seen": 1792646930.9301403,
+    "ast_hash": "3b5c1086c61ce639b510651ee0579345",
+    "semantic_hash": "3b5c1086c61ce639b510651ee0579345"
   },
   "server/tsconfig.json": {
     "mtime": 1785038278.0981746,
@@ -192,16 +192,16 @@
     "semantic_hash": "fa41e0c0cabc37c12fc245fb4d52866a"
   },
   "src/components/layout/Sidebar.tsx": {
-    "mtime": 1785038278.0981746,
-    "seen": 1788235617.6888237,
-    "ast_hash": "4fb25018569a06924745f00e89834eb0",
-    "semantic_hash": "4fb25018569a06924745f00e89834eb0"
+    "mtime": 1792641476.4404092,
+    "seen": 1792646930.9301803,
+    "ast_hash": "add08cfa5ea183014218f35960674b2c",
+    "semantic_hash": "add08cfa5ea183014218f35960674b2c"
   },
   "src/components/layout/TopBar.tsx": {
-    "mtime": 1785038278.0981746,
-    "seen": 1788235617.688826,
-    "ast_hash": "c4c731f3f2fd2a4b2c76a9ed5bdc9dd5",
-    "semantic_hash": "c4c731f3f2fd2a4b2c76a9ed5bdc9dd5"
+    "mtime": 1792641476.4428656,
+    "seen": 1792646930.9301875,
+    "ast_hash": "275590acd1ee8f85c98dfd34027b9950",
+    "semantic_hash": "275590acd1ee8f85c98dfd34027b9950"
   },
   "src/components/ui/Badge.tsx": {
     "mtime": 1785038278.0981746,
@@ -246,10 +246,10 @@
     "semantic_hash": "4fab101900669e3ffcdda50f9bd64a66"
   },
   "src/components/ui/ReceiptPreviewModal.tsx": {
-    "mtime": 1791559794.482682,
-    "seen": 1791607916.2441876,
-    "ast_hash": "7740dfcd5516a235ed73004c56ab2e3a",
-    "semantic_hash": "7740dfcd5516a235ed73004c56ab2e3a"
+    "mtime": 1791610550.4805973,
+    "seen": 1792646930.9302518,
+    "ast_hash": "6a0cbf14e19256cc745bfce6324e1a3f",
+    "semantic_hash": "6a0cbf14e19256cc745bfce6324e1a3f"
   },
   "src/components/ui/StockAlertBanner.tsx": {
     "mtime": 1785038278.0981746,
@@ -258,10 +258,10 @@
     "semantic_hash": "9896c1c9190909dc7b1a6ef27c91cf87"
   },
   "src/components/ui/WhatsAppSendModal.tsx": {
-    "mtime": 1791551576.2708201,
-    "seen": 1791607916.2444172,
-    "ast_hash": "01c44f96e9e72d05b32687cd2ae7f6be",
-    "semantic_hash": "01c44f96e9e72d05b32687cd2ae7f6be"
+    "mtime": 1791610582.8935986,
+    "seen": 1792646930.9302673,
+    "ast_hash": "2e1f0fa030a3096391564edd73082e11",
+    "semantic_hash": "2e1f0fa030a3096391564edd73082e11"
   },
   "src/db/database.ts": {
     "mtime": 1785038278.0981746,
@@ -282,10 +282,10 @@
     "semantic_hash": "4d18e53fdf67ade998c1896c0b713ccc"
   },
   "src/i18n/translations.ts": {
-    "mtime": 1785038278.0981746,
-    "seen": 1788235617.6888607,
-    "ast_hash": "2835c65a35d22998de27be291adba497",
-    "semantic_hash": "2835c65a35d22998de27be291adba497"
+    "mtime": 1791785924.2217705,
+    "seen": 1792646930.9303,
+    "ast_hash": "4ab9b4f689d54b40be171ab8bc176eb6",
+    "semantic_hash": "4ab9b4f689d54b40be171ab8bc176eb6"
   },
   "src/i18n/translations_bak.ts": {
     "mtime": 1785038278.0981746,
@@ -306,10 +306,10 @@
     "semantic_hash": "fa8b09a6dcb2fe525b341cf1dbccdc77"
   },
   "src/pages/AdminData.tsx": {
-    "mtime": 1785038278.0981746,
-    "seen": 1788235617.688871,
-    "ast_hash": "a79ea6adf539caaf0275fe9dc3ca162f",
-    "semantic_hash": "a79ea6adf539caaf0275fe9dc3ca162f"
+    "mtime": 1792642040.5382316,
+    "seen": 1792646930.930332,
+    "ast_hash": "5d8a7657ae72d6344231b0447a66bd51",
+    "semantic_hash": "5d8a7657ae72d6344231b0447a66bd51"
   },
   "src/pages/Architecture.tsx": {
     "mtime": 1785038278.0981746,
@@ -330,16 +330,16 @@
     "semantic_hash": "c8b0621b8b10d83fd530c23719c1edb4"
   },
   "src/pages/Dashboard.tsx": {
-    "mtime": 1785038278.0981746,
-    "seen": 1788235617.6888802,
-    "ast_hash": "0c3cec35b2796a3b7959fbc262ad859f",
-    "semantic_hash": "0c3cec35b2796a3b7959fbc262ad859f"
+    "mtime": 1791614281.2307281,
+    "seen": 1792646930.9303644,
+    "ast_hash": "273ad4f3aadd8624cd4a561464094a62",
+    "semantic_hash": "273ad4f3aadd8624cd4a561464094a62"
   },
   "src/pages/Dispatch.tsx": {
-    "mtime": 1791559773.723351,
-    "seen": 1791607916.2471192,
-    "ast_hash": "7c5b46133e38e9d9f9ce8523b909dfa3",
-    "semantic_hash": "7c5b46133e38e9d9f9ce8523b909dfa3"
+    "mtime": 1791786241.4486833,
+    "seen": 1792646930.9303718,
+    "ast_hash": "337509798ce0e37193bd88063109f3d5",
+    "semantic_hash": "337509798ce0e37193bd88063109f3d5"
   },
   "src/pages/Dispatch_bak.tsx": {
     "mtime": 1785038278.1137412,
@@ -348,10 +348,10 @@
     "semantic_hash": "100115e17f2d69a82ebd03cead6f7670"
   },
   "src/pages/Entries.tsx": {
-    "mtime": 1791551635.3060336,
-    "seen": 1791607916.2473428,
-    "ast_hash": "4eaefd834f82d30208c98fec951a53bd",
-    "semantic_hash": "4eaefd834f82d30208c98fec951a53bd"
+    "mtime": 1791610685.4424002,
+    "seen": 1792646930.9303877,
+    "ast_hash": "7dc06b85796285f50517755544c215b0",
+    "semantic_hash": "7dc06b85796285f50517755544c215b0"
   },
   "src/pages/Entries_bak.tsx": {
     "mtime": 1785038278.1137412,
@@ -420,10 +420,10 @@
     "semantic_hash": "e1873198f4379ecee1ba5937e81763a3"
   },
   "src/utils/customerReceipt.ts": {
-    "mtime": 1791551499.3047962,
-    "seen": 1791607916.2498116,
-    "ast_hash": "47490fc9c7ac060055f849c80ac933f3",
-    "semantic_hash": "47490fc9c7ac060055f849c80ac933f3"
+    "mtime": 1791610712.8080769,
+    "seen": 1792646930.9304888,
+    "ast_hash": "70ab36582031c566fbca2f8ed07b70a3",
+    "semantic_hash": "70ab36582031c566fbca2f8ed07b70a3"
   },
   "src/utils/entriesReport.ts": {
     "mtime": 1785038278.1137412,
@@ -455,138 +455,6 @@
     "ast_hash": "5b404931fc01e46759da99eb9ea0dc7e",
     "semantic_hash": "5b404931fc01e46759da99eb9ea0dc7e"
   },
-  "FIT_Deploy_20260724_1943/scripts/CreateDeploymentSet.ps1": {
-    "mtime": 1784900736.444363,
-    "seen": 1791607916.2359724,
-    "ast_hash": "7a719e6eee6bbe803de1167813474dbe",
-    "semantic_hash": "7a719e6eee6bbe803de1167813474dbe"
-  },
-  "FIT_Deploy_20260724_1943/scripts/FITShareFinal.ps1": {
-    "mtime": 1784794440.0283537,
-    "seen": 1791607916.2359767,
-    "ast_hash": "d40630a2eaf3fbb6b0226b82e92bd2cb",
-    "semantic_hash": "d40630a2eaf3fbb6b0226b82e92bd2cb"
-  },
-  "FIT_Deploy_20260724_1943/scripts/FITShareProcess.ps1": {
-    "mtime": 1774973394.0,
-    "seen": 1791607916.2359798,
-    "ast_hash": "9372300036a3221ce6785d67d78abff6",
-    "semantic_hash": "9372300036a3221ce6785d67d78abff6"
-  },
-  "FIT_Deploy_20260724_1943/scripts/PackageRelease.ps1": {
-    "mtime": 1776320852.0,
-    "seen": 1791607916.235983,
-    "ast_hash": "557d9737ae8dce0137e7b802f6e7ebf8",
-    "semantic_hash": "557d9737ae8dce0137e7b802f6e7ebf8"
-  },
-  "FIT_Deploy_20260724_1943/scripts/RegisterProtocol.ps1": {
-    "mtime": 1776314378.0,
-    "seen": 1791607916.2359855,
-    "ast_hash": "20820c87c2b50afe5291e7c7d03a4f8a",
-    "semantic_hash": "20820c87c2b50afe5291e7c7d03a4f8a"
-  },
-  "FIT_Deploy_20260724_1943/scripts/ShareOnWhatsApp.ps1": {
-    "mtime": 1784794383.326804,
-    "seen": 1791607916.2359884,
-    "ast_hash": "e891e9644ff8231e2943b0545be0e1d9",
-    "semantic_hash": "e891e9644ff8231e2943b0545be0e1d9"
-  },
-  "FIT_Deploy_20260724_1943/scripts/bundle-release.ps1": {
-    "mtime": 1776137618.0,
-    "seen": 1791607916.2359908,
-    "ast_hash": "3414e22735fef4f727c9c705d81dc364",
-    "semantic_hash": "3414e22735fef4f727c9c705d81dc364"
-  },
-  "FIT_Deploy_20260724_1943/scripts/debug_windows.ps1": {
-    "mtime": 1775113100.0,
-    "seen": 1791607916.2359936,
-    "ast_hash": "ad889dabf3a8917116916e38e26b3612",
-    "semantic_hash": "ad889dabf3a8917116916e38e26b3612"
-  },
-  "FIT_Deploy_20260724_1943/server/package.json": {
-    "mtime": 1776687699.9937658,
-    "seen": 1791607916.235996,
-    "ast_hash": "3582cc9db44a01ae7c10e0702e89744c",
-    "semantic_hash": "3582cc9db44a01ae7c10e0702e89744c"
-  },
-  "FIT_Deploy_Patch/Launch_App.ps1": {
-    "mtime": 1778665697.3720138,
-    "seen": 1791607916.2359986,
-    "ast_hash": "40cd40ef9a305b5691c906f625979729",
-    "semantic_hash": "40cd40ef9a305b5691c906f625979729"
-  },
-  "FIT_Deploy_Patch/backup-restore.ps1": {
-    "mtime": 1775878048.0,
-    "seen": 1791607916.236005,
-    "ast_hash": "07fcaa8b9af805739281127f07ae8ab9",
-    "semantic_hash": "07fcaa8b9af805739281127f07ae8ab9"
-  },
-  "FIT_Deploy_Patch/deploy-production.ps1": {
-    "mtime": 1776687636.1861298,
-    "seen": 1791607916.2360077,
-    "ast_hash": "d5e51d08f121649cc5e96cba9d46deb4",
-    "semantic_hash": "d5e51d08f121649cc5e96cba9d46deb4"
-  },
-  "FIT_Deploy_Patch/package.json": {
-    "mtime": 1780897252.707846,
-    "seen": 1791607916.2360103,
-    "ast_hash": "ff7e5df03b6a1425a9baf7699c3b306a",
-    "semantic_hash": "ff7e5df03b6a1425a9baf7699c3b306a"
-  },
-  "FIT_Deploy_Patch/scripts/CreateDeploymentSet.ps1": {
-    "mtime": 1784900736.444363,
-    "seen": 1791607916.2360127,
-    "ast_hash": "7a719e6eee6bbe803de1167813474dbe",
-    "semantic_hash": "7a719e6eee6bbe803de1167813474dbe"
-  },
-  "FIT_Deploy_Patch/scripts/FITShareFinal.ps1": {
-    "mtime": 1784794440.0283537,
-    "seen": 1791607916.236015,
-    "ast_hash": "d40630a2eaf3fbb6b0226b82e92bd2cb",
-    "semantic_hash": "d40630a2eaf3fbb6b0226b82e92bd2cb"
-  },
-  "FIT_Deploy_Patch/scripts/FITShareProcess.ps1": {
-    "mtime": 1774973394.0,
-    "seen": 1791607916.2360177,
-    "ast_hash": "9372300036a3221ce6785d67d78abff6",
-    "semantic_hash": "9372300036a3221ce6785d67d78abff6"
-  },
-  "FIT_Deploy_Patch/scripts/PackageRelease.ps1": {
-    "mtime": 1776320852.0,
-    "seen": 1791607916.2360198,
-    "ast_hash": "557d9737ae8dce0137e7b802f6e7ebf8",
-    "semantic_hash": "557d9737ae8dce0137e7b802f6e7ebf8"
-  },
-  "FIT_Deploy_Patch/scripts/RegisterProtocol.ps1": {
-    "mtime": 1776314378.0,
-    "seen": 1791607916.2360222,
-    "ast_hash": "20820c87c2b50afe5291e7c7d03a4f8a",
-    "semantic_hash": "20820c87c2b50afe5291e7c7d03a4f8a"
-  },
-  "FIT_Deploy_Patch/scripts/ShareOnWhatsApp.ps1": {
-    "mtime": 1784794383.326804,
-    "seen": 1791607916.2360246,
-    "ast_hash": "e891e9644ff8231e2943b0545be0e1d9",
-    "semantic_hash": "e891e9644ff8231e2943b0545be0e1d9"
-  },
-  "FIT_Deploy_Patch/scripts/bundle-release.ps1": {
-    "mtime": 1776137618.0,
-    "seen": 1791607916.2360272,
-    "ast_hash": "3414e22735fef4f727c9c705d81dc364",
-    "semantic_hash": "3414e22735fef4f727c9c705d81dc364"
-  },
-  "FIT_Deploy_Patch/scripts/debug_windows.ps1": {
-    "mtime": 1775113100.0,
-    "seen": 1791607916.2360296,
-    "ast_hash": "ad889dabf3a8917116916e38e26b3612",
-    "semantic_hash": "ad889dabf3a8917116916e38e26b3612"
-  },
-  "FIT_Deploy_Patch/server/package.json": {
-    "mtime": 1776687699.9937658,
-    "seen": 1791607916.236032,
-    "ast_hash": "3582cc9db44a01ae7c10e0702e89744c",
-    "semantic_hash": "3582cc9db44a01ae7c10e0702e89744c"
-  },
   "build-deploy.ps1": {
     "mtime": 1784701699.2661617,
     "seen": 1791607916.2362628,
@@ -610,5 +478,419 @@
     "seen": 1791607916.2504978,
     "ast_hash": "4916be29c2ed973893afdc6109898702",
     "semantic_hash": "4916be29c2ed973893afdc6109898702"
+  },
+  "FIT_Deploy_Backup/backup-restore.ps1": {
+    "mtime": 1785038278.0,
+    "seen": 1792646930.9297466,
+    "ast_hash": "2d2268a899059b177a89f7efb3c97c31",
+    "semantic_hash": "2d2268a899059b177a89f7efb3c97c31"
+  },
+  "FIT_Deploy_Backup/deploy-production.ps1": {
+    "mtime": 1785038278.0,
+    "seen": 1792646930.9297574,
+    "ast_hash": "62c2688c1b85f801b56afd3f66addd44",
+    "semantic_hash": "62c2688c1b85f801b56afd3f66addd44"
+  },
+  "FIT_Deploy_Backup/package.json": {
+    "mtime": 1785040382.0,
+    "seen": 1792646930.9297657,
+    "ast_hash": "43a0f6a2bcd8c8df0198d77bd29e0b60",
+    "semantic_hash": "43a0f6a2bcd8c8df0198d77bd29e0b60"
+  },
+  "FIT_Deploy_Backup/scripts/CreateDeploymentSet.ps1": {
+    "mtime": 1791613554.0,
+    "seen": 1792646930.929773,
+    "ast_hash": "b69bdf35e967401b8aad84625477aeeb",
+    "semantic_hash": "b69bdf35e967401b8aad84625477aeeb"
+  },
+  "FIT_Deploy_Backup/scripts/FITShareFinal.ps1": {
+    "mtime": 1785038280.0,
+    "seen": 1792646930.9297802,
+    "ast_hash": "47e441c9dbcc56356bd00642294a6cbe",
+    "semantic_hash": "47e441c9dbcc56356bd00642294a6cbe"
+  },
+  "FIT_Deploy_Backup/scripts/FITShareProcess.ps1": {
+    "mtime": 1785038280.0,
+    "seen": 1792646930.929787,
+    "ast_hash": "a28c0a7ef50cce71d75ffa3205d290d2",
+    "semantic_hash": "a28c0a7ef50cce71d75ffa3205d290d2"
+  },
+  "FIT_Deploy_Backup/scripts/PackageRelease.ps1": {
+    "mtime": 1785038280.0,
+    "seen": 1792646930.9298005,
+    "ast_hash": "1af5afeb3ec391fd002065e0b7512e2e",
+    "semantic_hash": "1af5afeb3ec391fd002065e0b7512e2e"
+  },
+  "FIT_Deploy_Backup/scripts/RegisterProtocol.ps1": {
+    "mtime": 1785038280.0,
+    "seen": 1792646930.929808,
+    "ast_hash": "79a29fe5f68178ca6a798363fa221494",
+    "semantic_hash": "79a29fe5f68178ca6a798363fa221494"
+  },
+  "FIT_Deploy_Backup/scripts/ShareOnWhatsApp.ps1": {
+    "mtime": 1785038280.0,
+    "seen": 1792646930.929815,
+    "ast_hash": "efa233ec8a9ff261038f2cc0323ebff2",
+    "semantic_hash": "efa233ec8a9ff261038f2cc0323ebff2"
+  },
+  "FIT_Deploy_Backup/scripts/bundle-release.ps1": {
+    "mtime": 1785038280.0,
+    "seen": 1792646930.929822,
+    "ast_hash": "405bca7a8535e9efb98040364822df83",
+    "semantic_hash": "405bca7a8535e9efb98040364822df83"
+  },
+  "FIT_Deploy_Backup/scripts/debug_windows.ps1": {
+    "mtime": 1791613506.0,
+    "seen": 1792646930.9298286,
+    "ast_hash": "904657af2f433b9b139a04f29af64efc",
+    "semantic_hash": "904657af2f433b9b139a04f29af64efc"
+  },
+  "FIT_Deploy_Backup/server/package.json": {
+    "mtime": 1785038280.0,
+    "seen": 1792646930.929835,
+    "ast_hash": "749eb07fbc30591dd00469ddab257123",
+    "semantic_hash": "749eb07fbc30591dd00469ddab257123"
+  },
+  "FIT_Deploy_Set/backup-restore.ps1": {
+    "mtime": 1785038277.9887216,
+    "seen": 1792646930.9298418,
+    "ast_hash": "2d2268a899059b177a89f7efb3c97c31",
+    "semantic_hash": "2d2268a899059b177a89f7efb3c97c31"
+  },
+  "FIT_Deploy_Set/deploy-production.ps1": {
+    "mtime": 1785038277.9887216,
+    "seen": 1792646930.9298484,
+    "ast_hash": "62c2688c1b85f801b56afd3f66addd44",
+    "semantic_hash": "62c2688c1b85f801b56afd3f66addd44"
+  },
+  "FIT_Deploy_Set/package.json": {
+    "mtime": 1785040381.1950183,
+    "seen": 1792646930.9298546,
+    "ast_hash": "43a0f6a2bcd8c8df0198d77bd29e0b60",
+    "semantic_hash": "43a0f6a2bcd8c8df0198d77bd29e0b60"
+  },
+  "FIT_Deploy_Set/scripts/CreateDeploymentSet.ps1": {
+    "mtime": 1792643532.4776983,
+    "seen": 1792646930.9298613,
+    "ast_hash": "6218311483f63309d077f9a93cf651d9",
+    "semantic_hash": "6218311483f63309d077f9a93cf651d9"
+  },
+  "FIT_Deploy_Set/scripts/FITShareFinal.ps1": {
+    "mtime": 1785038278.0824702,
+    "seen": 1792646930.929868,
+    "ast_hash": "47e441c9dbcc56356bd00642294a6cbe",
+    "semantic_hash": "47e441c9dbcc56356bd00642294a6cbe"
+  },
+  "FIT_Deploy_Set/scripts/FITShareProcess.ps1": {
+    "mtime": 1785038278.0824702,
+    "seen": 1792646930.9298747,
+    "ast_hash": "a28c0a7ef50cce71d75ffa3205d290d2",
+    "semantic_hash": "a28c0a7ef50cce71d75ffa3205d290d2"
+  },
+  "FIT_Deploy_Set/scripts/PackageRelease.ps1": {
+    "mtime": 1785038278.0824702,
+    "seen": 1792646930.929881,
+    "ast_hash": "1af5afeb3ec391fd002065e0b7512e2e",
+    "semantic_hash": "1af5afeb3ec391fd002065e0b7512e2e"
+  },
+  "FIT_Deploy_Set/scripts/RegisterProtocol.ps1": {
+    "mtime": 1785038278.0824702,
+    "seen": 1792646930.9298878,
+    "ast_hash": "79a29fe5f68178ca6a798363fa221494",
+    "semantic_hash": "79a29fe5f68178ca6a798363fa221494"
+  },
+  "FIT_Deploy_Set/scripts/ShareOnWhatsApp.ps1": {
+    "mtime": 1785038278.0824702,
+    "seen": 1792646930.9298944,
+    "ast_hash": "efa233ec8a9ff261038f2cc0323ebff2",
+    "semantic_hash": "efa233ec8a9ff261038f2cc0323ebff2"
+  },
+  "FIT_Deploy_Set/scripts/bundle-release.ps1": {
+    "mtime": 1785038278.0824702,
+    "seen": 1792646930.929901,
+    "ast_hash": "405bca7a8535e9efb98040364822df83",
+    "semantic_hash": "405bca7a8535e9efb98040364822df83"
+  },
+  "FIT_Deploy_Set/scripts/debug_windows.ps1": {
+    "mtime": 1791613504.0433323,
+    "seen": 1792646930.9299076,
+    "ast_hash": "904657af2f433b9b139a04f29af64efc",
+    "semantic_hash": "904657af2f433b9b139a04f29af64efc"
+  },
+  "FIT_Deploy_Set/server/package.json": {
+    "mtime": 1785038278.0824702,
+    "seen": 1792646930.9299147,
+    "ast_hash": "749eb07fbc30591dd00469ddab257123",
+    "semantic_hash": "749eb07fbc30591dd00469ddab257123"
+  },
+  ".agents/skills/customer-receipt-sharing/SKILL.md": {
+    "mtime": 1785038277.957472,
+    "seen": 1792646930.9305472,
+    "ast_hash": "163039f535435531be1765cf04de61db",
+    "semantic_hash": "163039f535435531be1765cf04de61db"
+  },
+  ".agents/skills/multi-language-transliteration/SKILL.md": {
+    "mtime": 1785038277.957472,
+    "seen": 1792646930.9305542,
+    "ast_hash": "f24172c921bd5c92c9c3e529ae109027",
+    "semantic_hash": "f24172c921bd5c92c9c3e529ae109027"
+  },
+  ".agents/skills/whatsapp-cloud-api-sharing/SKILL.md": {
+    "mtime": 1787233544.0275984,
+    "seen": 1792646930.9305613,
+    "ast_hash": "9c545728f1c344ec9a12658c03640386",
+    "semantic_hash": "9c545728f1c344ec9a12658c03640386"
+  },
+  ".agents/skills/whatsapp-zero-api-sharing/SKILL.md": {
+    "mtime": 1785038277.9731011,
+    "seen": 1792646930.9305682,
+    "ast_hash": "85ee7e2145fc518ff6525cee425ea6b9",
+    "semantic_hash": "85ee7e2145fc518ff6525cee425ea6b9"
+  },
+  "Architecture_Notes_FR.txt": {
+    "mtime": 1785038277.9731011,
+    "seen": 1792646930.9305751,
+    "ast_hash": "02f9262d5d7028eb0caa7481dc669379",
+    "semantic_hash": "02f9262d5d7028eb0caa7481dc669379"
+  },
+  "DEPLOYMENT - NSSM.md": {
+    "mtime": 1785038277.9731011,
+    "seen": 1792646930.9305816,
+    "ast_hash": "2b380a4da2b9028db634771643c2675a",
+    "semantic_hash": "2b380a4da2b9028db634771643c2675a"
+  },
+  "DEPLOYMENT.md": {
+    "mtime": 1785038277.9731011,
+    "seen": 1792646930.9305887,
+    "ast_hash": "448a6671e7a57dec212c8fca79756f88",
+    "semantic_hash": "448a6671e7a57dec212c8fca79756f88"
+  },
+  "Errors.txt": {
+    "mtime": 1785040299.5424094,
+    "seen": 1792646930.9305956,
+    "ast_hash": "5f95a2b85e76875b743573e0b3093aef",
+    "semantic_hash": "5f95a2b85e76875b743573e0b3093aef"
+  },
+  "FIT_Deploy_Backup/DEPLOYMENT - NSSM.md": {
+    "mtime": 1785038278.0,
+    "seen": 1792646930.9306026,
+    "ast_hash": "2b380a4da2b9028db634771643c2675a",
+    "semantic_hash": "2b380a4da2b9028db634771643c2675a"
+  },
+  "FIT_Deploy_Backup/DEPLOYMENT.md": {
+    "mtime": 1785038278.0,
+    "seen": 1792646930.9306095,
+    "ast_hash": "448a6671e7a57dec212c8fca79756f88",
+    "semantic_hash": "448a6671e7a57dec212c8fca79756f88"
+  },
+  "FIT_Deploy_Backup/README.md": {
+    "mtime": 1785038278.0,
+    "seen": 1792646930.9306161,
+    "ast_hash": "5097ee5ecba4b70298a17c3b1161e2d4",
+    "semantic_hash": "5097ee5ecba4b70298a17c3b1161e2d4"
+  },
+  "FIT_Deploy_Backup/WhatsAppSharing_Steps.txt": {
+    "mtime": 1785038278.0,
+    "seen": 1792646930.9306228,
+    "ast_hash": "64a6706515136343e2bf4c5d2103ea30",
+    "semantic_hash": "64a6706515136343e2bf4c5d2103ea30"
+  },
+  "FIT_Deploy_Backup/docker-compose.yml": {
+    "mtime": 1785038280.0,
+    "seen": 1792646930.9306295,
+    "ast_hash": "d66f4e72402982fff893ecc1a76dda2d",
+    "semantic_hash": "d66f4e72402982fff893ecc1a76dda2d"
+  },
+  "FIT_Deploy_Set/DEPLOYMENT - NSSM.md": {
+    "mtime": 1785038277.9731011,
+    "seen": 1792646930.9306357,
+    "ast_hash": "2b380a4da2b9028db634771643c2675a",
+    "semantic_hash": "2b380a4da2b9028db634771643c2675a"
+  },
+  "FIT_Deploy_Set/DEPLOYMENT.md": {
+    "mtime": 1785038277.9731011,
+    "seen": 1792646930.9306426,
+    "ast_hash": "448a6671e7a57dec212c8fca79756f88",
+    "semantic_hash": "448a6671e7a57dec212c8fca79756f88"
+  },
+  "FIT_Deploy_Set/README.md": {
+    "mtime": 1785038277.9731011,
+    "seen": 1792646930.9306495,
+    "ast_hash": "5097ee5ecba4b70298a17c3b1161e2d4",
+    "semantic_hash": "5097ee5ecba4b70298a17c3b1161e2d4"
+  },
+  "FIT_Deploy_Set/WhatsAppSharing_Steps.txt": {
+    "mtime": 1785038277.9731011,
+    "seen": 1792646930.9306564,
+    "ast_hash": "64a6706515136343e2bf4c5d2103ea30",
+    "semantic_hash": "64a6706515136343e2bf4c5d2103ea30"
+  },
+  "FIT_Deploy_Set/docker-compose.yml": {
+    "mtime": 1785038278.0199792,
+    "seen": 1792646930.9306629,
+    "ast_hash": "d66f4e72402982fff893ecc1a76dda2d",
+    "semantic_hash": "d66f4e72402982fff893ecc1a76dda2d"
+  },
+  "FIT_START_PROD_ClientVer.txt": {
+    "mtime": 1784697867.9820447,
+    "seen": 1792646930.9306695,
+    "ast_hash": "409ff2c69ec982ab76211147d7f9e6b8",
+    "semantic_hash": "409ff2c69ec982ab76211147d7f9e6b8"
+  },
+  "Implemented today.txt": {
+    "mtime": 1791520982.858273,
+    "seen": 1792646930.9306762,
+    "ast_hash": "b60526c3c5a63b5c715b2cf2a1cb5443",
+    "semantic_hash": "b60526c3c5a63b5c715b2cf2a1cb5443"
+  },
+  "Launch_Errors.txt": {
+    "mtime": 1785038277.9731011,
+    "seen": 1792646930.930683,
+    "ast_hash": "e1138a78fc3b439825bc049d2ed4004d",
+    "semantic_hash": "e1138a78fc3b439825bc049d2ed4004d"
+  },
+  "New Text Document (2).txt": {
+    "mtime": 1784898727.3099456,
+    "seen": 1792646930.9306893,
+    "ast_hash": "bed1bbe5f764b7c386bc6c14cde78c27",
+    "semantic_hash": "bed1bbe5f764b7c386bc6c14cde78c27"
+  },
+  "New Text Document.txt": {
+    "mtime": 1784795985.8102782,
+    "seen": 1792646930.9306962,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "README.md": {
+    "mtime": 1785038277.9731011,
+    "seen": 1792646930.930703,
+    "ast_hash": "5097ee5ecba4b70298a17c3b1161e2d4",
+    "semantic_hash": "5097ee5ecba4b70298a17c3b1161e2d4"
+  },
+  "SendWappMedia.txt": {
+    "mtime": 1785038277.9731011,
+    "seen": 1792646930.9307094,
+    "ast_hash": "18f2c2485b19f54dfc9f992be4e55c16",
+    "semantic_hash": "18f2c2485b19f54dfc9f992be4e55c16"
+  },
+  "WhatsAppSharing_Steps.txt": {
+    "mtime": 1785038277.9731011,
+    "seen": 1792646930.9307156,
+    "ast_hash": "64a6706515136343e2bf4c5d2103ea30",
+    "semantic_hash": "64a6706515136343e2bf4c5d2103ea30"
+  },
+  "WhatsApp_Dir_V2.txt": {
+    "mtime": 1786171836.277768,
+    "seen": 1792646930.930722,
+    "ast_hash": "bf67e9560f58379cfe8bdbf89b2be783",
+    "semantic_hash": "bf67e9560f58379cfe8bdbf89b2be783"
+  },
+  "agyout.txt": {
+    "mtime": 1785038277.9887216,
+    "seen": 1792646930.930729,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "docker-compose.yml": {
+    "mtime": 1785038278.0199792,
+    "seen": 1792646930.9307356,
+    "ast_hash": "d66f4e72402982fff893ecc1a76dda2d",
+    "semantic_hash": "d66f4e72402982fff893ecc1a76dda2d"
+  },
+  "docs/superpowers/plans/2026-05-19-dispatch-returns-fix.md": {
+    "mtime": 1785038278.0199792,
+    "seen": 1792646930.9307423,
+    "ast_hash": "2f870ab2a4ea02cf19eb44ef41fb802c",
+    "semantic_hash": "2f870ab2a4ea02cf19eb44ef41fb802c"
+  },
+  "docs/superpowers/plans/2026-05-19-dispatch-variety-input-fix.md": {
+    "mtime": 1785038278.0199792,
+    "seen": 1792646930.930749,
+    "ast_hash": "b0c1344fdf3d6ff939d104f0333de6c9",
+    "semantic_hash": "b0c1344fdf3d6ff939d104f0333de6c9"
+  },
+  "docs/superpowers/specs/2026-05-19-dispatch-returns-fix-design.md": {
+    "mtime": 1785038278.0199792,
+    "seen": 1792646930.9307556,
+    "ast_hash": "30320c8115c01eec39d26748d5e439e3",
+    "semantic_hash": "30320c8115c01eec39d26748d5e439e3"
+  },
+  "fit-architecture.html": {
+    "mtime": 1788336022.7016306,
+    "seen": 1792646930.930762,
+    "ast_hash": "273af6606599b5def264e5bdaf5c958d",
+    "semantic_hash": "273af6606599b5def264e5bdaf5c958d"
+  },
+  "fit-architecture.visual-check.html": {
+    "mtime": 1788336058.7982738,
+    "seen": 1792646930.930769,
+    "ast_hash": "ec16c2e07d406472b42a0ee40b1802b9",
+    "semantic_hash": "ec16c2e07d406472b42a0ee40b1802b9"
+  },
+  "index.html": {
+    "mtime": 1785038278.0199792,
+    "seen": 1792646930.930776,
+    "ast_hash": "c8522a3f531b8b78af629e23643c0578",
+    "semantic_hash": "c8522a3f531b8b78af629e23643c0578"
+  },
+  "postman.html": {
+    "mtime": 1788239088.740383,
+    "seen": 1792646930.9307823,
+    "ast_hash": "bb7b1f783fb977499dcb5f3934991048",
+    "semantic_hash": "bb7b1f783fb977499dcb5f3934991048"
+  },
+  "postman.txt": {
+    "mtime": 1788239200.6297374,
+    "seen": 1792646930.9307885,
+    "ast_hash": "03abb5ac55e2a9fc4af0bccf8fb46a44",
+    "semantic_hash": "03abb5ac55e2a9fc4af0bccf8fb46a44"
+  },
+  "sampleRequest.txt": {
+    "mtime": 1785038278.0824702,
+    "seen": 1792646930.9307952,
+    "ast_hash": "1a527a2bbc59ab3013419e0521be74e4",
+    "semantic_hash": "1a527a2bbc59ab3013419e0521be74e4"
+  },
+  "scripts/window_debug.txt": {
+    "mtime": 1785038278.0824702,
+    "seen": 1792646930.930802,
+    "ast_hash": "a66265eac4e15957da18706975a84a95",
+    "semantic_hash": "a66265eac4e15957da18706975a84a95"
+  },
+  "CR.jpeg": {
+    "mtime": 1791611245.9031172,
+    "seen": 1792646930.9308085,
+    "ast_hash": "03524cdea8c1346096f63f5c5700053e",
+    "semantic_hash": "03524cdea8c1346096f63f5c5700053e"
+  },
+  "fit-architecture.visual-check.1440x900.dark.png": {
+    "mtime": 1788336057.5585017,
+    "seen": 1792646930.9308155,
+    "ast_hash": "fd9a2eb3aab2bc042ded5502d58d537e",
+    "semantic_hash": "fd9a2eb3aab2bc042ded5502d58d537e"
+  },
+  "fit-architecture.visual-check.1440x900.light.png": {
+    "mtime": 1788336053.8880227,
+    "seen": 1792646930.930822,
+    "ast_hash": "8f62f4d91d92d36c587cbb364c61a7cd",
+    "semantic_hash": "8f62f4d91d92d36c587cbb364c61a7cd"
+  },
+  "fit-architecture.visual-check.2048x1320.dark.png": {
+    "mtime": 1788336058.7877464,
+    "seen": 1792646930.9308286,
+    "ast_hash": "7ae8a83ff44bebe8be2e6eb1e0784c70",
+    "semantic_hash": "7ae8a83ff44bebe8be2e6eb1e0784c70"
+  },
+  "fit-architecture.visual-check.2048x1320.light.png": {
+    "mtime": 1788336056.733874,
+    "seen": 1792646930.9308357,
+    "ast_hash": "116737c6d2659ce7c6ef1593da5d58a1",
+    "semantic_hash": "116737c6d2659ce7c6ef1593da5d58a1"
+  },
+  "src/assets/fit_login_icon.png": {
+    "mtime": 1785038278.0981746,
+    "seen": 1792646930.9308429,
+    "ast_hash": "d9fd86d821b655e0cc37beb7ef50fc3d",
+    "semantic_hash": "d9fd86d821b655e0cc37beb7ef50fc3d"
   }
 }
